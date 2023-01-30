@@ -1,0 +1,69 @@
+(* Interfaces *)
+interface_decl = 'interface' identifier '=' interface_block;
+interface_block = '{' i_body '}';
+
+i_body = '{' [{ i_kvp ^+ ',' }]
+i_kvp = identifier ['?'] ':' i_value_type
+i_value_type = 'string' | 'int' (* more to come *)
+
+
+(* 
+
+    ======== ======= =====
+    Resource Classes (RCs) 
+    ======== ======= =====
+    
+*)
+
+resource_class = rc_declaration '{' rc_body '}' ;
+
+(* 
+    RCs can have generic params (general.ebnf) or flags. 
+*)
+rc_expression   = identifier rc_params           ;
+rc_params       = [generic_params] [rc_flags]    ;
+rc_flags        = never; 
+(* rc_flags =     '(' {identifier ^+ ',' } ')'   ;       *)
+
+(* Title line *)
+(*  
+    `rc_ident`:
+        Must have an identifier.
+        If it is not an extension, it may have generics and flags.  
+        If it is an extension, it may not have generics and flags, but the extended RC may. 
+    Regardless, there may be an `rc_entry_directive` following the `rc_ident` section.
+*)
+rc_declaration  = 'resource' rc_ident [rc_entry_directive] ;
+rc_ident        = identifier ( 'extends' identifier rc_params | rc_params ); 
+
+
+(* 
+    -- ----
+    RC Body
+    -- ----
+*)
+rc_body = [{ rc_data | rc_interface | rc_links | rc_method }] ;
+
+(* Special grammar *)
+rc_reference =  '@empty' | '@media' | '@self' | identifier ;
+rc_data = rc_reference | type ; 
+
+
+
+rc_data = 'data' type ;
+rc_interface = 'interface' (identifier | interface_block) ; 
+
+
+rc_links = 'links' '{' links_block '}' ;
+links_block = [{ link ^+ ',' }] ; 
+link = identifier '->' rc_reference ;
+
+
+rc_method = method_name '->' { method_response ^ ',' } ;
+method_name = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE' ;
+method_status = '#' /\d+/;
+method_response = method_status [rc_data] | rc_data ;
+
+
+(* Entry Points *)
+rc_entry_directive = 'entry' identifier '@' UriLiteral ;

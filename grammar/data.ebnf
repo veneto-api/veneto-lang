@@ -1,0 +1,37 @@
+(* 
+    =====
+    Types
+    =====
+*)
+type = identifier [generic_identifier] | struct_expr | composite | type_operation ; 
+
+type_alias = 'type' identifier '=' type ;
+
+
+(* Structs *)
+struct_expr = struct_operation | struct_body ; 
+ 
+(* Struct literals *)
+
+struct = struct_body [{ struct_mods }] ;
+struct_mods = ',' ('in' | 'out') '+' struct_body ;
+
+struct_body  = '{' [{ struct_field ^+ ',' }]  '}'     ;
+struct_field = identifier ':' type                       ;
+
+(* Struct operator expressions *)
+struct_operation = struct_lax | NEVER;
+struct_lax = '%' (struct | identifier); 
+
+
+
+
+(* Composites *)
+composite = c_array | c_tuple; 
+c_array = type '[]' ;
+c_tuple = '[' [{ type ^+ ',' }] ']' ; 
+
+
+(* Type expressions *)
+type_optional = type '?' ; 
+type_operation = type_optional ; 
