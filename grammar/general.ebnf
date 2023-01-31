@@ -12,3 +12,11 @@ use_tree = use_path '::' ( '*' | '{' use_tree '}' | use_operand );
 
 use_path = { identifier ^ '::'};
 use_operand = identifier ['as' identifier]; 
+
+
+(* Top-level grammar *)
+document = [{ 
+    use | 
+    (* Data *) type_alias | 
+    (* API *) interface_decl | resource_class
+ }];

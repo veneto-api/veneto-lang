@@ -1,0 +1,49 @@
+
+resource Ref<T> { 
+	data T
+	
+	/// GET is not mandatory for this type
+	GET -> #405 
+
+    /// Removes the referenced item
+	DELETE
+}
+
+resource List<T>  {
+
+	data T[]
+
+	links { 
+        /**
+            References the next page of the collection, if such a page exists.
+
+            If empty, this is the final page of the collection. 
+        */
+		next ->? @self, 
+	}
+
+    /// Renders the current page of the collection.
+	GET
+
+	/// Creates a new item within the collection. 
+	POST T -> #201 T 
+}
+
+
+/**
+    A Media resource is just a file; this Resource Class is essentially a placeholder for anything that's not data.
+
+    For example, this is appropriate to allow users to upload and download images. 
+*/
+resource Media { 
+
+	GET -> @media 
+
+	PUT @media
+
+}
+
+/// An Action is a simple POST-only link. 
+resource Action { 
+	POST -> #204
+}

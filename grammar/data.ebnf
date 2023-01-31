@@ -21,7 +21,7 @@ struct_field = identifier ':' type                       ;
 
 (* Struct operator expressions *)
 struct_operation = struct_lax | NEVER;
-struct_lax = '%' (struct | identifier); 
+struct_lax = (struct | identifier) '%' ; 
 
 
 

@@ -31,10 +31,9 @@ rc_flags        = never;
         Must have an identifier.
         If it is not an extension, it may have generics and flags.  
         If it is an extension, it may not have generics and flags, but the extended RC may. 
-    Regardless, there may be an `rc_entry_directive` following the `rc_ident` section.
 *)
-rc_declaration  = 'resource' rc_ident [rc_entry_directive] ;
-rc_ident        = identifier ( 'extends' identifier rc_params | rc_params ); 
+rc_declaration  = 'resource' identifier rc_modification ;
+rc_modification = 'extends' identifier rc_params | rc_params; 
 
 
 (* 
@@ -56,14 +55,14 @@ rc_interface = 'interface' (identifier | interface_block) ;
 
 rc_links = 'links' '{' links_block '}' ;
 links_block = [{ link ^+ ',' }] ; 
-link = identifier '->' rc_reference ;
+link = identifier '->' ['?'] rc_reference ;
 
 
-rc_method = method_name '->' { method_response ^ ',' } ;
+rc_method = method_name { '->' method_response ^ ',' } ;
 method_name = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE' ;
-method_status = '#' /\d+/;
+method_status = '#' Number;
 method_response = method_status [rc_data] | rc_data ;
 
 
 (* Entry Points *)
-rc_entry_directive = 'entry' identifier '@' UriLiteral ;
+rc_entry_directive = 'entry' identifier StringLiteral ;

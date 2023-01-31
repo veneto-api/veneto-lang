@@ -1,3 +1,8 @@
+mod parse;
+
 fn main() {
-    println!("Hello, world!");
+    match parse::parse_literal("type asdf = string") { 
+        Ok(_) => println!("SUCC"),
+        Err(err) => { dbg!(err); }
+    }
 }
