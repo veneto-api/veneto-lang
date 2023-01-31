@@ -1,12 +1,22 @@
 use strum_macros::EnumString;
 
-// pub enum TokenClass { 
-//     Terminal(TerminalToken), 
+#[derive(Clone, Copy, Debug)]
+pub struct Position { 
+    pub line:   u32,
+    pub col:    u32, 
+}
 
-//     Identifier(String), 
-//     Number(String), 
-//     StringLiteral(String), 
-// }
+pub enum TokenKind { 
+    Terminal(TerminalToken), 
+
+    Identifier(String), 
+    Number(String), 
+    StringLiteral(String), 
+}
+pub struct Token { 
+    kind: TokenKind,
+    position: Position,
+}
 
 
 #[derive(PartialEq, Eq, Debug, EnumString, Clone, Copy)] 

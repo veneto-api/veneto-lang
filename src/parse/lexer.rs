@@ -1,36 +1,58 @@
 use std::{str::{Chars, FromStr}, collections::VecDeque};
 
-use super::{ParseResult, ParseError, tokens::{ TerminalToken }};
-
+use super::{ ParseResult, ParseErrorKind, ParseError };
+use super::tokens::{ Position, TerminalToken };
 
 #[allow(clippy::upper_case_acronyms)]
-enum CharStreamOut { 
+enum Unit { 
     Char(char), 
     StringLiteral(String), 
 
-    /// This includes comments for now 
+    /// Explicitly a chunk type at this level 
+    /// This also includes comments for now 
     Whitespace,
 
     EOF
 }
 
 /// The first stage of the lexer: a wrapper around a raw `Chars` stream.  
-/// This handles whitespace, comments, and string literals.
-struct CharStream<'a> { 
+/// 
+/// This primarily passes `char`s downstream, but also handles chunking of anything that breaks the flow of the `TokenStream`, including:
+///  - Processing comments
+///  - Chunking together string literals
+///  - Converting whitespace and EOFs into their own enum variants for pattern matching convenience 
+/// 
+/// Doc comments will be handled here too
+/// https://www.notion.so/veneto/Support-Doc-Comments-67e5f478d063488cabf2daba91eccf12
+/// TAG: DOC_COMMENTS
+struct UnitStream<'a> { 
     chars: Chars<'a>,
-    buf: VecDeque<char>,
+    peeked: VecDeque<char>,
+    position: Position,
 }
-impl<'a> CharStream<'a> { 
+impl<'a> UnitStream<'a> { 
     fn new(chars: Chars<'a>) -> Self { 
         Self { 
             chars, 
-            buf: VecDeque::new(),
+            peeked: VecDeque::new(),
+            position: Position { line: 0, col: 0 }
         }
     }
 
+    fn position(&self) -> Position { self.position }
+
     /// Takes the next character, from either the queue or the source stream.
     fn inner_next(&mut self) -> Option<char> { 
-        self.buf.pop_front().or_else(|| self.chars.next())
+        let next = self.peeked.pop_front().or_else(|| self.chars.next());
+        if let Some(ch) = next { 
+            if ch == '\n' { 
+                self.position.line += 1;
+                self.position.col = 0;
+            } else { 
+                self.position.col += 1; 
+            }
+        }
+        next
     }
 
     /// Peeks the next character, without advancing the stream.
@@ -38,13 +60,13 @@ impl<'a> CharStream<'a> {
     /// Returns the next character from the queue if applicable,
     /// or takes the next character from the source stream and pushes it onto the queue.
     fn inner_peek(&mut self) -> Option<char> { 
-        match self.buf.front() { 
+        match self.peeked.front() { 
             Some(ch) => Some(*ch), 
             None => { 
                 match self.chars.next() { 
                     None => None, 
                     Some(ch) => { 
-                        self.buf.push_back(ch);
+                        self.peeked.push_back(ch);
                         Some(ch) 
                     }
                 }
@@ -63,7 +85,7 @@ impl<'a> CharStream<'a> {
                 Some(ch) => { 
                     if predicate(ch) { continue }
                     else { 
-                        self.buf.push_back(ch); 
+                        self.peeked.push_back(ch); 
                         break
                     }
                 }
@@ -71,13 +93,16 @@ impl<'a> CharStream<'a> {
         }
     }
 
-    /// Advances the stream to after the next instance of `expected`.
+    /// Advances the stream past the next instance of `expected`.
     /// 
     /// If `expected` never occurs before the end of the stream, this returns `UnexpectedEOF`. 
-    fn skip_to(&mut self, expected: char) -> ParseResult<()> { 
+    fn skip_past(&mut self, expected: char) -> ParseResult<()> { 
         loop { 
             match self.inner_next() { 
-                None => return Err(ParseError::Unexpected(RawToken::EOF)),
+                None => return Err(ParseError{
+                    kind: ParseErrorKind::Unexpected(RawTokenKind::EOF),
+                    position: self.position,
+                }),
                 Some(ch) => { 
                     if ch == expected { return Ok(()) }
                     else { continue }
@@ -86,13 +111,16 @@ impl<'a> CharStream<'a> {
         }
     }
 
-    /// Like `skip_to`, except it returns all of the scanned characters up to that point. 
-    fn take_up_to(&mut self, expected: char) -> ParseResult<String> { 
+    /// Like `skip_past`, except it returns all of the scanned characters up to that point. 
+    fn take_past(&mut self, expected: char) -> ParseResult<String> { 
         let str = String::new(); 
 
         loop { 
             match self.inner_next() { 
-                None => return Err(ParseError::Unexpected(RawToken::EOF)),
+                None => return Err(ParseError{
+                    kind: ParseErrorKind::Unexpected(RawTokenKind::EOF),
+                    position: self.position,
+                }),
                 Some(ch) => { 
                     if ch == expected { return Ok(str) }
                     else { continue }
@@ -113,20 +141,20 @@ impl<'a> CharStream<'a> {
         else { false }
     }
 
-    pub fn next(&mut self) -> ParseResult<CharStreamOut> { 
+    pub fn next(&mut self) -> ParseResult<Unit> { 
         match self.inner_next() { 
-            None => Ok(CharStreamOut::EOF), 
+            None => Ok(Unit::EOF), 
             Some(ch) => { 
                 if ch.is_whitespace() { 
                     self.skip_while(|ch| ch.is_whitespace());
-                    Ok(CharStreamOut::Whitespace)
+                    Ok(Unit::Whitespace)
                 }
                 else if ch == '"' { 
                     // Handle string literals. 
                     // If we add escaping, it'll happen here
                     //TAG: ESCAPING https://veneto.notion.site/Escaping-in-string-literals-d76caa72c65546a09ce0e668025f36bc
-                    Ok(CharStreamOut::StringLiteral(
-                        self.take_up_to('"')?
+                    Ok(Unit::StringLiteral(
+                        self.take_past('"')?
                     ))
                 }
                 else if ch == '/' { 
@@ -134,78 +162,89 @@ impl<'a> CharStream<'a> {
                     
                     if self.check_for('/') { 
                         // If the cursor is at a `//`, this is a line comment.
-                        // Read to the end of line, and then past any subsequent whitespace, and return. 
+                        // Read to the end of line and past any remaining whitespace, and emit a `Whitespace` char. 
 
                         // Ignoring EOF errors as that is a valid end of comment
                         // This is kinda sloppy
-                        let _ = self.skip_to('\n');
+                        let _ = self.skip_past('\n');
 
                         self.skip_while(|ch| ch.is_whitespace());
-                        Ok(CharStreamOut::Whitespace)
+                        Ok(Unit::Whitespace)
                     }
                     else if self.check_for('*') { 
                         // If the cursor is at a `/*`, this is a block comment.
                         // Keep reading to the next `*` until a `/` is found after it, then do the same as above. 
 
                         loop { 
-                            self.skip_to('*')?;
-                            if self.inner_peek() == Some('/') { break }
+                            self.skip_past('*')?;
+                            if self.check_for('/') { break }
                         }
 
                         self.skip_while(|ch| ch.is_whitespace());
-                        Ok(CharStreamOut::Whitespace)
+                        Ok(Unit::Whitespace)
                     }
                     else { 
                         // No `/` or `*` was found after the first `/`, so this is not a comment.
                         // Return the character as normal
-                        Ok(CharStreamOut::Char(ch))
+                        Ok(Unit::Char(ch))
                     }
 
                 }
                 else { 
-                    Ok(CharStreamOut::Char(ch))
+                    Ok(Unit::Char(ch))
                 }
             }
         }
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
-pub enum WordType { 
+/// Private wrapper struct to ensure that the `RawTokenStream` doesn't lose its position for queued units 
+struct UnitCursor { 
+    unit: Unit, 
+    position: Position, 
+}
+
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub enum WordKind { 
     Alpha, 
     Number,
     Punctuation, 
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(PartialEq, Eq, Debug)]
-pub enum RawToken { 
-    Word(WordType, String), 
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub enum RawTokenKind { 
+    Word(WordKind, String), 
     StringLiteral(String), 
     EOF, 
+}
+
+pub struct RawToken { 
+    pub kind: RawTokenKind, 
+    pub position: Position, 
 }
 
 
 /// The second stage of the lexer:  
 /// On top of the output from the first stage, this coalesces character types into single tokens. 
 struct RawTokenStream<'a> { 
-    stream: CharStream<'a>,
-    buf: VecDeque<CharStreamOut>,
+    stream: UnitStream<'a>,
+    peeked: VecDeque<UnitCursor>,
 }
 impl<'a> RawTokenStream<'a> { 
 
     fn new(chars: Chars<'a>) -> Self { 
         Self { 
-            stream: CharStream::new(chars), 
-            buf: VecDeque::new(), 
+            stream: UnitStream::new(chars), 
+            peeked: VecDeque::new(), 
         }
     }
 
     /// Takes the next character, from either the queue or the source stream.
-    fn inner_next(&mut self) -> ParseResult<CharStreamOut> { 
-        match self.buf.pop_front() { 
+    fn inner_next(&mut self) -> ParseResult<UnitCursor> { 
+        match self.peeked.pop_front() { 
             Some(t) => Ok(t), 
-            None => self.stream.next(),
+            None => self.stream.next().map(|unit| UnitCursor { unit, position: self.stream.position() }),
         }
     }
 
@@ -221,14 +260,14 @@ impl<'a> RawTokenStream<'a> {
         loop { 
             let next = self.inner_next()?; 
 
-            match next { 
-                CharStreamOut::Char(ch) if predicate(ch) => { 
+            match next.unit { 
+                Unit::Char(ch) if predicate(ch) => { 
                     str.push(ch); 
                     continue
                 },
 
                 _ => {
-                    self.buf.push_back(next);
+                    self.peeked.push_back(next);
                     return Ok(str)
                 }
             }
@@ -237,28 +276,40 @@ impl<'a> RawTokenStream<'a> {
 
     pub fn next(&mut self) -> ParseResult<RawToken> { 
         loop { 
-            match self.inner_next()? { 
-                CharStreamOut::Whitespace => continue, 
-                CharStreamOut::EOF => return Ok(RawToken::EOF), 
-                CharStreamOut::StringLiteral(s) => return Ok(RawToken::StringLiteral(s)),
-                CharStreamOut::Char(c) => { 
+            let next = self.inner_next()?;
+            let position = next.position;
+
+            match next.unit { 
+                Unit::Whitespace => continue, 
+                Unit::EOF => return Ok(RawToken { kind: RawTokenKind::EOF, position }), 
+                Unit::StringLiteral(s) => return Ok(RawToken { kind: RawTokenKind::StringLiteral(s), position }),
+                Unit::Char(c) => { 
                     if c.is_alphabetic() { 
-                        return Ok(RawToken::Word( WordType::Alpha,
-                            self.take_while(c, |ch| ch.is_alphanumeric() || ch == '-' || ch == '_')?
-                        ))
+                        return Ok(RawToken { 
+                            kind: RawTokenKind::Word( WordKind::Alpha,
+                                self.take_while(c, |ch| ch.is_alphanumeric() || ch == '-' || ch == '_')?
+                            ), 
+                            position
+                        })
                     }
                     else if c.is_numeric() { 
-                        return Ok(RawToken::Word( WordType::Number,
-                            self.take_while(c, |ch| ch.is_numeric())?
-                        ))
+                        return Ok(RawToken { 
+                            kind: RawTokenKind::Word( WordKind::Number,
+                                self.take_while(c, |ch| ch.is_numeric())?
+                            ), 
+                            position
+                        })
                     }
                     else if c.is_ascii_punctuation() { 
-                        return Ok(RawToken::Word( WordType::Punctuation,
-                            self.take_while(c, |ch| ch.is_ascii_punctuation())?
-                        ))
+                        return Ok(RawToken { 
+                            kind: RawTokenKind::Word( WordKind::Punctuation,
+                                self.take_while(c, |ch| ch.is_ascii_punctuation())?
+                            ),
+                            position
+                        })
                     }
                     else { 
-                        return Err(ParseError::UnknownCharacterType)
+                        return Err(ParseError { kind: ParseErrorKind::UnknownCharacterType, position })
                     }
                 }
             }
@@ -269,35 +320,44 @@ impl<'a> RawTokenStream<'a> {
 
 
 impl RawToken {
-    pub fn as_terminal(self) -> ParseResult<TerminalToken>{ 
-        if let RawToken::Word(_, ref val) = self { 
-            TerminalToken::from_str(val).map_err(|_| ParseError::Unexpected(self))
+    pub fn as_terminal(&self) -> ParseResult<TerminalToken> { 
+        if let RawTokenKind::Word(_, ref val) = self.kind { 
+            TerminalToken::from_str(val).map_err(|_| ParseError { 
+                kind: ParseErrorKind::Unexpected(self.kind.clone()), 
+                position: self.position,
+            })
         } else { 
-            Err(ParseError::Unexpected(self))
+            Err(ParseError { 
+                kind: ParseErrorKind::Unexpected(self.kind.clone()), 
+                position: self.position
+            })
         }
     }
 
-    pub fn as_identifier(self) -> ParseResult<String> { 
-        if let RawToken::Word(WordType::Alpha, val) = self { 
+    pub fn as_identifier(&self) -> ParseResult<String> { 
+        if let RawTokenKind::Word(WordKind::Alpha, val) = self.kind.clone() { 
             Ok(val)
         }
         else { 
-            Err(ParseError::Unexpected(self))
+            Err(ParseError { 
+                kind: ParseErrorKind::Unexpected(self.kind.clone()), 
+                position: self.position,
+            })
         }
     }
 
     pub fn expect(self, terminal: TerminalToken) -> ParseResult<()> { 
-        if let RawToken::Word(_, ref val) = self { 
+        if let RawTokenKind::Word(_, ref val) = self.kind { 
             if TerminalToken::from_str(val) == Ok(terminal) { return Ok(()) }
         }
-        Err(ParseError::Expected(terminal))
+        Err(ParseError { kind: ParseErrorKind::Expected(terminal), position: self.position })
     }
 }
 
 
 pub struct TokenStream<'a> { 
     stream: RawTokenStream<'a>,
-    buf: VecDeque<RawToken>,
+    peeked: VecDeque<RawToken>,
 }
 
 impl<'a> TokenStream<'a> { 
@@ -305,12 +365,12 @@ impl<'a> TokenStream<'a> {
     pub fn new(chars: Chars<'a>) -> Self { 
         Self { 
             stream: RawTokenStream::new(chars),
-            buf: VecDeque::new(),
+            peeked: VecDeque::new(),
         }
     }
 
     pub fn next(&mut self) -> ParseResult<RawToken> { 
-        match self.buf.pop_front() { 
+        match self.peeked.pop_front() { 
             Some(t) => Ok(t), 
             None => self.stream.next(),
         }
