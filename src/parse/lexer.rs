@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::{str::Chars, collections::VecDeque};
 
 use super::{ ParseResult, ParseErrorKind, ParseError, tokens::WordKind };
@@ -305,6 +306,11 @@ impl<'a> RawTokenStream<'a> {
 pub struct TokenStream<'a> { 
     stream: RawTokenStream<'a>,
     peeked: VecDeque<RawToken>,
+}
+impl<'a> Debug for TokenStream<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("<TokenStream (stub Debug impl)>")
+    }
 }
 
 impl<'a> TokenStream<'a> { 

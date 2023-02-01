@@ -182,7 +182,8 @@ impl UseTree {
 
 #[cfg(test)]
 mod test {
-    use crate::parse::ParseResult;
+    use crate::parse::tokens::{ RawTokenKind, WordKind };
+    use crate::parse::{ParseResult, ParseErrorKind};
     use crate::parse::ast::use_tree::UseTreeKind;
     use crate::parse::{ lexer::TokenStream, TerminalToken} ;
     use crate::parse::lexer_tests::{ token_stream, assert_eof, assert_terminal };
@@ -196,10 +197,30 @@ mod test {
     }
 
     #[test]
-    pub fn simple() { 
-        let (mut stream, tree) = parse_use("use foo::bar").unwrap();
+    fn simple() { 
+        let (mut stream, tree) = parse_use("use foo::bar use").unwrap();
         assert_eq!(tree.path, vec![ "foo", "bar"]);
         assert_eq!(tree.kind, UseTreeKind::Simple);
+
+        // `use` is a valid top-level keyword, so it should end the parsing gracefully
+        assert_terminal(&mut stream, TerminalToken::Use);
         assert_eof(&mut stream);
+    }
+
+    #[test]
+    fn unexpected_end() { 
+        let res = parse_use("use foo::bar errrrar");
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().kind, ParseErrorKind::Unexpected(RawTokenKind::Word(WordKind::Alpha, "errrrar".to_string())))
+    }
+
+    #[test]
+    fn glob() { 
+        let (mut stream, tree) = parse_use("use foo::bar::baz::* use").unwrap();
+        assert_eq!(tree.path, vec!["foo", "bar", "baz"]);
+        assert_eq!(tree.kind, UseTreeKind::Glob); 
+
+        assert_terminal(&mut stream, TerminalToken::Use);
+        assert_eof(&mut stream); 
     }
 }

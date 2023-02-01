@@ -17,7 +17,7 @@ mod lexer_tests;
 
 use self::tokens::{TerminalToken, Position, RawTokenKind};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ParseErrorKind { 
     Unexpected(RawTokenKind),
     UnknownCharacterType, 
