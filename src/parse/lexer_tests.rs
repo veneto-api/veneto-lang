@@ -1,5 +1,6 @@
-
-use crate::parse::{ParseResult, lexer::{RawTokenKind, WordKind, TokenStream}};
+use super::ParseResult;
+use super::lexer::TokenStream;
+use super::tokens::{ RawTokenKind, WordKind };
 
 use super::tokens::TerminalToken;
 

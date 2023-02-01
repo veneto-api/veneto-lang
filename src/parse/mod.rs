@@ -2,12 +2,15 @@
 /// 
 /// See https://veneto.notion.site/Lexing-rules-5cdd6b984898418cbeacd416158e5e81 for more information on how the lexer works.
 mod lexer;
+
+/// This module contains definitions for the tokens emitted by the `lexer`, 
+/// including terminal tokens like operators and keywords.  
 mod tokens;
 
 #[cfg(test)]
 mod lexer_tests;
 
-use self::{lexer::RawTokenKind, tokens::{TerminalToken, Position}};
+use self::tokens::{TerminalToken, Position, RawTokenKind};
 
 #[derive(Debug)]
 pub enum ParseErrorKind { 
