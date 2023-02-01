@@ -20,6 +20,7 @@ pub enum RawTokenKind {
     EOF, 
 }
 
+#[derive(Clone)]
 pub struct RawToken { 
     pub kind: RawTokenKind, 
     pub position: Position, 
@@ -27,29 +28,29 @@ pub struct RawToken {
 
 
 impl RawToken {
+    /// Attempts to convert this token to a terminal symbol,
+    /// like an operator or a language keyword.
+    /// Returns an `Unexpected` error if this token does not represent a valid terminal. 
+    /// 
+    /// This error can be ignored by the parser if a nonterminal symbol is also valid at its current position.
     pub fn as_terminal(&self) -> ParseResult<TerminalToken> { 
         if let RawTokenKind::Word(_, ref val) = self.kind { 
-            TerminalToken::from_str(val).map_err(|_| ParseError { 
-                kind: ParseErrorKind::Unexpected(self.kind.clone()), 
-                position: self.position,
-            })
+            TerminalToken::from_str(val).map_err(|_| self.as_err_unexpected())
         } else { 
-            Err(ParseError { 
-                kind: ParseErrorKind::Unexpected(self.kind.clone()), 
-                position: self.position
-            })
+            Err(self.as_err_unexpected())
         }
     }
 
+    /// Attempts to extract an identifier from this token.
+    /// Returns an `Unexpected` error if this token is not a Word.
+    /// 
+    /// This error can be ignored by the parser if another kind of token is also valid at its current position.
     pub fn as_identifier(&self) -> ParseResult<String> { 
         if let RawTokenKind::Word(WordKind::Alpha, val) = self.kind.clone() { 
             Ok(val)
         }
         else { 
-            Err(ParseError { 
-                kind: ParseErrorKind::Unexpected(self.kind.clone()), 
-                position: self.position,
-            })
+            Err(self.as_err_unexpected())
         }
     }
 
@@ -58,6 +59,11 @@ impl RawToken {
             if TerminalToken::from_str(val) == Ok(terminal) { return Ok(()) }
         }
         Err(ParseError { kind: ParseErrorKind::Expected(terminal), position: self.position })
+    }
+
+    /// Helper method to convert a `RawToken` to an "Unexpected ____" error
+    pub fn as_err_unexpected(&self) -> ParseError { 
+        ParseError { kind: ParseErrorKind::Unexpected(self.kind.clone()), position: self.position }
     }
 }
 
@@ -104,15 +110,37 @@ pub enum TerminalToken {
     Assign,
 
     #[strum(serialize="@")]
-    Ampersat,
+    SpecialType,
 
     #[strum(serialize="#")]
     HttpStatus,
 
     #[strum(serialize="%")]
     Lax,
+
+    #[strum(serialize="::")]
+    PathSeparator, 
     
     // Keywords
 
     Type, 
+
+    Use, 
+
+    Interface,
+
+    Resource,
+
+    // 
+    #[strum(serialize="as")]
+    PathAlias, 
+
+    #[strum(serialize="*")]
+    Glob,
+}
+
+impl TerminalToken { 
+    pub fn is_top_level_keyword(&self) -> bool { 
+        matches!(self, TerminalToken::Type | TerminalToken::Use | TerminalToken::Interface | TerminalToken::Resource)
+    }
 }

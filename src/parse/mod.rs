@@ -7,8 +7,13 @@ mod lexer;
 /// including terminal tokens like operators and keywords.  
 mod tokens;
 
+/// This contains the representation of the Abstract Syntax Tree emitted by the parser.
+mod ast;
+
 #[cfg(test)]
 mod lexer_tests;
+
+
 
 use self::tokens::{TerminalToken, Position, RawTokenKind};
 

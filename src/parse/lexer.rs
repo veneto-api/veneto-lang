@@ -1,7 +1,7 @@
 use std::{str::Chars, collections::VecDeque};
 
 use super::{ ParseResult, ParseErrorKind, ParseError, tokens::WordKind };
-use super::tokens::{ RawToken, RawTokenKind, Position };
+use super::tokens::{ RawToken, RawTokenKind, Position, TerminalToken };
 
 #[allow(clippy::upper_case_acronyms)]
 enum Unit { 
@@ -301,7 +301,7 @@ impl<'a> RawTokenStream<'a> {
 }
 
 
-
+/// This is a wrapper around the `RawTokenStream` that just exists to enable peeking features.
 pub struct TokenStream<'a> { 
     stream: RawTokenStream<'a>,
     peeked: VecDeque<RawToken>,
@@ -316,11 +316,34 @@ impl<'a> TokenStream<'a> {
         }
     }
 
+    /// Pulls the next token from the stream, and advances the cursor.
     pub fn next(&mut self) -> ParseResult<RawToken> { 
         match self.peeked.pop_front() { 
             Some(t) => Ok(t), 
             None => self.stream.next(),
         }
+    }
+
+    /// Peeks the next token from the stream, without advancing the cursor.
+    pub fn peek(&mut self) -> ParseResult<RawToken> { 
+        match self.peeked.front() { 
+            Some(t) => Ok(t.clone()), 
+            None => { 
+                let next = self.stream.next()?;
+                self.peeked.push_back(next.clone()); 
+                Ok(next) 
+                // I wish there were an Entry-like API here 
+            }
+        }
+    }
+
+    /// Peeks the next token from the stream; if it matches `expected`, the cursor is advanced and the function returns `true`.
+    pub fn check_for_terminal(&mut self, expected: TerminalToken) -> ParseResult<bool> { 
+        if self.peek()?.as_terminal()? == expected { 
+            let _ = self.next();
+            Ok(true)
+        }
+        else { Ok(false) }
     }
 
 }
