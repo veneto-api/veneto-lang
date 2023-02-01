@@ -112,8 +112,8 @@ impl<'a> UnitStream<'a> {
     }
 
     /// Like `skip_past`, except it returns all of the scanned characters up to that point. 
-    fn take_past(&mut self, expected: char) -> ParseResult<String> { 
-        let str = String::new(); 
+    fn take_up_to(&mut self, expected: char) -> ParseResult<String> { 
+        let mut str = String::new(); 
 
         loop { 
             match self.inner_next() { 
@@ -123,7 +123,10 @@ impl<'a> UnitStream<'a> {
                 }),
                 Some(ch) => { 
                     if ch == expected { return Ok(str) }
-                    else { continue }
+                    else { 
+                        str.push(ch);
+                        continue 
+                    }
                 }
             }
         }
@@ -154,7 +157,7 @@ impl<'a> UnitStream<'a> {
                     // If we add escaping, it'll happen here
                     //TAG: ESCAPING https://veneto.notion.site/Escaping-in-string-literals-d76caa72c65546a09ce0e668025f36bc
                     Ok(Unit::StringLiteral(
-                        self.take_past('"')?
+                        self.take_up_to('"')?
                     ))
                 }
                 else if ch == '/' { 

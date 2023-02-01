@@ -39,6 +39,15 @@ pub enum TerminalToken {
 
     #[strum(serialize="=")]
     Assign,
+
+    #[strum(serialize="@")]
+    Ampersat,
+
+    #[strum(serialize="#")]
+    HttpStatus,
+
+    #[strum(serialize="%")]
+    Lax,
     
     // Keywords
 
