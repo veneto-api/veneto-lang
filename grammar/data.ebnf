@@ -3,9 +3,9 @@
     Types
     =====
 *)
-type = identifier [generic_identifier] | struct_expr | composite | type_operation ; 
+type = generic_identifier | struct_expr | composite | type_operation ; 
 
-type_alias = 'type' identifier '=' type ;
+type_alias = 'type' generic_identifier '=' type ;
 
 
 (* Structs *)

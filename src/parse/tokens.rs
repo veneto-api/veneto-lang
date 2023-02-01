@@ -5,60 +5,111 @@ use super::{ParseResult, ParseError, ParseErrorKind};
 
 
 
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub enum WordKind { 
-    Alpha, 
-    Number,
-    Punctuation, 
-}
-
 #[allow(clippy::upper_case_acronyms)]
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub enum RawTokenKind { 
-    Word(WordKind, String), 
+pub enum TokenKind { 
+    Word(String), 
+    Number(String), 
+    Punctuation(Punctuation), 
     StringLiteral(String), 
     EOF, 
 }
 
 #[derive(Clone)]
-pub struct RawToken { 
-    pub kind: RawTokenKind, 
+pub struct Token { 
+    pub kind: TokenKind, 
     pub position: Position, 
 }
 
 
-impl RawToken {
-    /// Attempts to convert this token to a terminal symbol,
-    /// like an operator or a language keyword.
-    /// Returns an `Unexpected` error if this token does not represent a valid terminal. 
-    /// 
-    /// This error can be ignored by the parser if a nonterminal symbol is also valid at its current position.
-    pub fn as_terminal(&self) -> ParseResult<TerminalToken> { 
-        if let RawTokenKind::Word(_, ref val) = self.kind { 
-            TerminalToken::from_str(val).map_err(|_| self.as_err_unexpected())
+impl Token {
+
+    /// Returns the inner `Punctuation` if this token is punctuation, otherwise `None`
+    pub fn as_punctuation(&self) -> Option<Punctuation> { 
+        if let TokenKind::Punctuation(op) = self.kind { 
+            Some(op)
+        } else { 
+            None
+        }
+    }
+    
+    /// Returns the inner `Punctuation` or an Unexpected error.
+    pub fn try_as_punctuation(&self) -> ParseResult<Punctuation> { 
+        if let TokenKind::Punctuation(op) = self.kind { 
+            Ok(op)
         } else { 
             Err(self.as_err_unexpected())
         }
     }
 
-    /// Attempts to extract an identifier from this token.
-    /// Returns an `Unexpected` error if this token is not a Word.
-    /// 
-    /// This error can be ignored by the parser if another kind of token is also valid at its current position.
-    pub fn as_identifier(&self) -> ParseResult<String> { 
-        if let RawTokenKind::Word(WordKind::Alpha, val) = self.kind.clone() { 
-            Ok(val)
-        }
-        else { 
-            Err(self.as_err_unexpected())
+    /// Returns an "Expected" error if this token does not match the provided punctuation.
+    pub fn expect_punctuation(&self, expected: Punctuation) -> ParseResult<()> { 
+        if let TokenKind::Punctuation(op) = self.kind { 
+            if op == expected { 
+                return Ok(())
+            }
+        } 
+
+        Err(ParseError { kind: ParseErrorKind::ExpectedPunctuation(expected), position: self.position })
+    }
+
+    /// Returns the `Keyword` if this token represents one, otherwise `None` 
+    pub fn as_keyword(&self) -> Option<Keyword> { 
+        if let TokenKind::Word(str) = self.kind.clone() { 
+            Keyword::from_str(&str).ok()
+        } else { 
+            None
         }
     }
 
-    pub fn expect(self, terminal: TerminalToken) -> ParseResult<()> { 
-        if let RawTokenKind::Word(_, ref val) = self.kind { 
-            if TerminalToken::from_str(val) == Ok(terminal) { return Ok(()) }
+    /// Returns the `Keyword` this token represents, or an "Unexpected" error
+    pub fn try_as_keyword(&self) -> ParseResult<Keyword> { 
+        self.as_keyword().ok_or_else(|| self.as_err_unexpected())
+    }
+
+    /// Returns an "Expected" error if this token does not match the provided `Keyword`. 
+    pub fn expect_keyword(&self, expected: Keyword) -> ParseResult<()> { 
+        if let TokenKind::Word(str) = self.kind.clone() { 
+            if Keyword::from_str(&str) == Ok(expected) { 
+                return Ok(())
+            }
         }
-        Err(ParseError { kind: ParseErrorKind::Expected(terminal), position: self.position })
+        Err(ParseError { kind: ParseErrorKind::ExpectedKeyword(expected), position: self.position })
+    }
+
+    /// Returns a `Terminal` sum type if this token matches an `Punctuation` or `Keyword`, otherwise `None` 
+    pub fn as_terminal(&self) -> Option<Terminal> { 
+        match self.kind.clone() { 
+            TokenKind::Punctuation(op) => Some(Terminal::Punctuation(op)),
+            TokenKind::Word(str) => Keyword::from_str(&str).ok().map(Terminal::Keyword), 
+            _ => None
+        }
+    }
+
+    /// Returns the token's value if this token is a valid identifier, otherwise `None`
+    pub fn as_identifier(&self) -> Option<String> { 
+        if let TokenKind::Word(str) = self.kind.clone() { 
+            Some(str)
+        } else { 
+            None
+        }
+    }
+
+    /// Returns this token value if this token is a valid identifier, otherwise an `ExpectedIdentifier` error.
+    pub fn try_as_identifier(&self) -> ParseResult<String> { 
+        if let TokenKind::Word(str) = self.kind.clone() { 
+            Ok(str)
+        } else { 
+            Err(ParseError { kind: ParseErrorKind::ExpectedIdentifier, position: self.position })
+        }
+    }
+
+    pub fn try_as_number(&self) -> ParseResult<String> { 
+        if let TokenKind::Number(str) = self.kind.clone() { 
+            Ok(str) 
+        } else { 
+            Err(ParseError { kind: ParseErrorKind::ExpectedNumber, position: self.position })
+        }
     }
 
     /// Helper method to convert a `RawToken` to an "Unexpected ____" error
@@ -75,24 +126,11 @@ pub struct Position {
     pub col:    u32, 
 }
 
-pub enum TokenKind { 
-    Terminal(TerminalToken), 
 
-    Identifier(String), 
-    Number(String), 
-    StringLiteral(String), 
-}
-pub struct Token { 
-    kind: TokenKind,
-    position: Position,
-}
-
-
+/// These represent all valid punctuation sequences in the language;
+/// punctuation words that don't match this enum should raise an `UnrecognizedPunctuation` error.
 #[derive(PartialEq, Eq, Debug, EnumString, Clone, Copy)] 
-#[strum(serialize_all="lowercase")]
-pub enum TerminalToken { 
-
-    // Punctuation
+pub enum Punctuation { 
 
     #[strum(serialize="{")]
     BraceOpen,
@@ -120,8 +158,18 @@ pub enum TerminalToken {
 
     #[strum(serialize="::")]
     PathSeparator, 
-    
-    // Keywords
+
+    #[strum(serialize="*")]
+    Glob,
+
+    // Also of note, if we ever add a slash `/` operator for any reason,
+    // we should update the tests to make sure that comment handling works properly
+    // (that a single slash doesn't start a comment, etc)
+}
+
+#[derive(PartialEq, Eq, Debug, EnumString, Clone, Copy)] 
+#[strum(serialize_all="lowercase")]
+pub enum Keyword { 
 
     Type, 
 
@@ -131,16 +179,23 @@ pub enum TerminalToken {
 
     Resource,
 
-    // 
     #[strum(serialize="as")]
     PathAlias, 
 
-    #[strum(serialize="*")]
-    Glob,
 }
 
-impl TerminalToken { 
-    pub fn is_top_level_keyword(&self) -> bool { 
-        matches!(self, TerminalToken::Type | TerminalToken::Use | TerminalToken::Interface | TerminalToken::Resource)
+impl Keyword { 
+    /// `true` if the keyword is valid at the start of a top-level sequence. 
+    pub fn is_top_level(&self) -> bool { 
+        matches!(self, Self::Type | Self::Use | Self::Interface | Self::Resource)
     }
+}
+
+/// A "terminal" symbol - i.e. a punctuation or a keyword.
+/// 
+/// I'm abusing this term a bit here, but the idea is that these are a literally-defined token,
+/// rather than something variable like a `Number` or an `Identifier` 
+pub enum Terminal { 
+    Punctuation(Punctuation),
+    Keyword(Keyword), 
 }

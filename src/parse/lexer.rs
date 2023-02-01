@@ -1,8 +1,9 @@
 use std::fmt::Debug;
+use std::str::FromStr;
 use std::{str::Chars, collections::VecDeque};
 
-use super::{ ParseResult, ParseErrorKind, ParseError, tokens::WordKind };
-use super::tokens::{ RawToken, RawTokenKind, Position, TerminalToken };
+use super::{ ParseResult, ParseErrorKind, ParseError };
+use super::tokens::{ Token, TokenKind, Position, Punctuation };
 
 #[allow(clippy::upper_case_acronyms)]
 enum Unit { 
@@ -101,7 +102,7 @@ impl<'a> UnitStream<'a> {
         loop { 
             match self.inner_next() { 
                 None => return Err(ParseError{
-                    kind: ParseErrorKind::Unexpected(RawTokenKind::EOF),
+                    kind: ParseErrorKind::Unexpected(TokenKind::EOF),
                     position: self.position,
                 }),
                 Some(ch) => { 
@@ -119,7 +120,7 @@ impl<'a> UnitStream<'a> {
         loop { 
             match self.inner_next() { 
                 None => return Err(ParseError{
-                    kind: ParseErrorKind::Unexpected(RawTokenKind::EOF),
+                    kind: ParseErrorKind::Unexpected(TokenKind::EOF),
                     position: self.position,
                 }),
                 Some(ch) => { 
@@ -258,39 +259,90 @@ impl<'a> RawTokenStream<'a> {
         }
     }
 
-    pub fn next(&mut self) -> ParseResult<RawToken> { 
+    pub fn next(&mut self) -> ParseResult<Token> { 
+
         loop { 
             let next = self.inner_next()?;
             let position = next.position;
 
             match next.unit { 
                 Unit::Whitespace => continue, 
-                Unit::EOF => return Ok(RawToken { kind: RawTokenKind::EOF, position }), 
-                Unit::StringLiteral(s) => return Ok(RawToken { kind: RawTokenKind::StringLiteral(s), position }),
+                Unit::EOF => return Ok(Token { kind: TokenKind::EOF, position }), 
+                Unit::StringLiteral(s) => return Ok(Token { kind: TokenKind::StringLiteral(s), position }),
                 Unit::Char(c) => { 
                     if c.is_alphabetic() { 
-                        return Ok(RawToken { 
-                            kind: RawTokenKind::Word( WordKind::Alpha,
+                        return Ok(Token { 
+                            kind: TokenKind::Word(
                                 self.take_while(c, |ch| ch.is_alphanumeric() || ch == '-' || ch == '_')?
                             ), 
                             position
                         })
                     }
                     else if c.is_numeric() { 
-                        return Ok(RawToken { 
-                            kind: RawTokenKind::Word( WordKind::Number,
-                                self.take_while(c, |ch| ch.is_numeric())?
-                            ), 
+                        return Ok(Token { 
+                            kind: TokenKind::Number(self.take_while(c, |ch| ch.is_numeric())?), 
                             position
                         })
                     }
                     else if c.is_ascii_punctuation() { 
-                        return Ok(RawToken { 
-                            kind: RawTokenKind::Word( WordKind::Punctuation,
-                                self.take_while(c, |ch| ch.is_ascii_punctuation())?
-                            ),
-                            position
-                        })
+
+                        // We can't just use `take_while` here because multi-char punctuations can be right next to each other
+                        // We also can't just return the first one we find, because some punctuations are substrings of another
+                        // (notably, PathSeparator :: vs Colon :)
+
+                        let mut word = String::new(); 
+                        word.push(c); 
+
+                        /*
+                            So the way we do this is to process the entire word and keep track of our longest match.
+                            We have a list so that we can backtrack if we end up overshooting the longest match,
+                            and it's mutable so that it can be reset every time we have a new match. 
+                         */
+
+                        let mut match_longest : Option<Token> = Punctuation::from_str(&word).ok().map(|op| Token { 
+                            kind: TokenKind::Punctuation(op),
+                            position,
+                        });
+                        let mut match_backtrack = Vec::<UnitCursor>::new();
+
+                        // Arbitrary limit - this could be totally unnecesssary but it's here for now 
+                        let size_limit = 50;
+                        let mut size_i = 0;
+
+                        loop { 
+                            size_i += 1;
+                            if size_i > size_limit { 
+                                return Err(ParseError { kind: ParseErrorKind::WordTooLong, position })
+                            }
+
+                            let next = self.inner_next()?; 
+
+                            match next.unit { 
+                                Unit::Char(ch) if ch.is_ascii_punctuation() => { 
+                                    word.push(ch); 
+                                    if let Ok(op) = Punctuation::from_str(&word) { 
+                                        match_longest = Some(Token{ kind: TokenKind::Punctuation(op), position });
+                                        match_backtrack = Vec::new(); 
+                                    } else { 
+                                        match_backtrack.push(next); 
+                                    }
+                                },
+
+                                _ => { 
+                                    match_backtrack.push(next); 
+                                    break
+                                }
+                            }
+                        }
+
+                        if let Some(token) = match_longest { 
+
+                            for token in match_backtrack.into_iter() { self.peeked.push_back(token); }
+                            return Ok(token)
+
+                        } else { 
+                            return Err(ParseError { kind: ParseErrorKind::UnrecognizedPunctuation(word), position })
+                        }
                     }
                     else { 
                         return Err(ParseError { kind: ParseErrorKind::UnknownCharacterType, position })
@@ -305,7 +357,7 @@ impl<'a> RawTokenStream<'a> {
 /// This is a wrapper around the `RawTokenStream` that just exists to enable peeking features.
 pub struct TokenStream<'a> { 
     stream: RawTokenStream<'a>,
-    peeked: VecDeque<RawToken>,
+    peeked: VecDeque<Token>,
 }
 impl<'a> Debug for TokenStream<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -323,7 +375,7 @@ impl<'a> TokenStream<'a> {
     }
 
     /// Pulls the next token from the stream, and advances the cursor.
-    pub fn next(&mut self) -> ParseResult<RawToken> { 
+    pub fn next(&mut self) -> ParseResult<Token> { 
         match self.peeked.pop_front() { 
             Some(t) => Ok(t), 
             None => self.stream.next(),
@@ -331,7 +383,7 @@ impl<'a> TokenStream<'a> {
     }
 
     /// Peeks the next token from the stream, without advancing the cursor.
-    pub fn peek(&mut self) -> ParseResult<RawToken> { 
+    pub fn peek(&mut self) -> ParseResult<Token> { 
         match self.peeked.front() { 
             Some(t) => Ok(t.clone()), 
             None => { 
@@ -341,15 +393,6 @@ impl<'a> TokenStream<'a> {
                 // I wish there were an Entry-like API here 
             }
         }
-    }
-
-    /// Peeks the next token from the stream; if it matches `expected`, the cursor is advanced and the function returns `true`.
-    pub fn check_for_terminal(&mut self, expected: TerminalToken) -> ParseResult<bool> { 
-        if self.peek()?.as_terminal()? == expected { 
-            let _ = self.next();
-            Ok(true)
-        }
-        else { Ok(false) }
     }
 
 }

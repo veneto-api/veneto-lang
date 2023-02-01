@@ -1,4 +1,4 @@
-use crate::parse::{lexer::TokenStream, ParseResult, tokens::{TerminalToken, RawToken, RawTokenKind}};
+use crate::parse::{lexer::TokenStream, ParseResult, tokens::{Punctuation, Token, TokenKind, Terminal, Keyword}};
 
 #[derive(PartialEq, Debug)]
 pub enum UseTreeKind { 
@@ -31,18 +31,18 @@ enum DelimKind {
 
 struct UseTreeClause { 
     tree: UseTree, 
-    delim: RawToken,
+    delim: Token,
     delim_kind: DelimKind, 
 }
 
-fn pull_delim(stream: &mut TokenStream) -> ParseResult<(RawToken, DelimKind)> { 
+fn pull_delim(stream: &mut TokenStream) -> ParseResult<(Token, DelimKind)> { 
     let token = stream.peek()?;
-    match token.as_terminal()? { 
-        TerminalToken::BraceClose => { 
+    match token.as_punctuation() { 
+        Some(Punctuation::BraceClose) => { 
             stream.next()?;
             Ok((token, DelimKind::BraceClose))
         },
-        TerminalToken::Comma => { 
+        Some(Punctuation::Comma) => { 
             stream.next()?;
             Ok((token, DelimKind::Comma))
         },
@@ -80,90 +80,108 @@ impl UseTree {
         
         loop { 
 
-            // First we grab an identifier to add to `path` 
-            let ident = stream.next()?.as_identifier()?; 
-            path.push(ident); 
+            let first = stream.next()?; 
+            match first.kind { 
+                // First we have our two simplest end-of-clause cases - 
+                // end-of-file and glob 
 
-            let peek = stream.peek()?;
-            if peek.kind == RawTokenKind::EOF { 
-                return Ok(UseTreeClause { 
+                TokenKind::EOF => return Ok(UseTreeClause { 
                     tree: UseTree { path, kind: UseTreeKind::Simple }, 
-                    delim: peek, 
+                    delim: first, 
                     delim_kind: DelimKind::End 
-                })
-            }
+                }),
 
-            match peek.as_terminal()? { 
-                // If we encounter a path separator, continue so we keep adding to the current `path`
-                TerminalToken::PathSeparator => {
-                    stream.next()?;
-                    continue
-                }, 
+                TokenKind::Punctuation(Punctuation::Glob) => return Ok(UseTreeClause { 
+                    tree: UseTree{ path, kind: UseTreeKind::Glob }, 
+                    delim: first, 
+                    delim_kind: DelimKind::End,
+                }),
 
-                // If we have a glob, that's the end of this clause.  Pack it in, we're done here
-                TerminalToken::Glob => { 
-                    stream.next()?;
-                    return Ok(UseTreeClause { 
-                        tree: UseTree{ path, kind: UseTreeKind::Glob }, 
-                        delim: peek, 
-                        delim_kind: DelimKind::End,
-                    })
-                }
-
-                // We've gotta handle aliases too
-                TerminalToken::PathAlias => { 
-                    stream.next()?; 
-                    let alias = stream.next()?.as_identifier()?; 
-                    let (delim, delim_kind ) = pull_delim(stream)?;
-                    return Ok(UseTreeClause { 
-                        tree: UseTree { 
-                            path, 
-                            kind: UseTreeKind::Alias(alias)
-                        },
-                        delim,
-                        delim_kind
-                    })
-                }
-
-                // Here's where things get fun 
-                // If we have a `{`, this is a nested use, so we recursively parse the next few clauses
-                TerminalToken::BraceOpen => { 
+                // If it's an open brace, things get fun.
+                // That means this is a nested use, so we recursively parse the next few clauses
+                TokenKind::Punctuation(Punctuation::BraceOpen) => { 
                     stream.next()?; 
                     return Ok(UseTreeClause { 
                         tree: UseTree { 
                             path,
                             kind: UseTreeKind::Nested(Self::parse_nested(stream)?)
                         }, 
-                        delim: peek, 
+                        // This isn't the correct end delimiter, but it shouldn't matter since this is successful
+                        // I'm sure that will bite us soon 
+                        delim: first, 
                         delim_kind: DelimKind::End 
                     })
                 },
 
-                // These next two are only relevant for parsing nested clauses
-                // If we encounter a comma or a close brace, we terminate the current clause
-                // Outside of this function, we must make sure these are only handled while looking for nested clauses 
-                TerminalToken::BraceClose | TerminalToken::Comma => { 
-                    let (delim, delim_kind) = pull_delim(stream)?;
-                    return Ok(UseTreeClause { 
-                        tree: UseTree { path, kind: UseTreeKind::Simple },
-                        delim,
-                        delim_kind
-                    })
-                }
+                // And here is the most common scenario. 
+                // We've probably found an identifier - add it to the `path` and see what comes next. 
+                TokenKind::Word(_) => { 
+
+                    path.push( first.try_as_identifier()? );
+                    
+                    let peek = stream.peek()?; 
+                    match peek.as_terminal() { 
+
+                        // If it's another `::`, continue the process
+                        Some(Terminal::Punctuation(Punctuation::PathSeparator)) => { 
+                            stream.next()?;
+                            continue 
+                        }
 
 
-                // 
 
-                kind if kind.is_top_level_keyword() => { 
-                    return Ok(UseTreeClause { 
-                        tree: Self{ path, kind: UseTreeKind::Simple}, 
-                        delim: peek, 
-                        delim_kind: DelimKind::End 
-                    })
+                        // If it's an `as`, handle that junk, then terminate the clause
+                        Some(Terminal::Keyword(Keyword::PathAlias)) => { 
+                            stream.next()?; 
+                            let alias = stream.next()?.try_as_identifier()?; 
+                            let (delim, delim_kind ) = pull_delim(stream)?;
+                            return Ok(UseTreeClause { 
+                                tree: UseTree { 
+                                    path, 
+                                    kind: UseTreeKind::Alias(alias)
+                                },
+                                delim,
+                                delim_kind
+                            })
+                        }
+
+
+                        // These next two are only relevant for parsing nested clauses
+                        // If we encounter a comma or a close brace, we terminate the current clause
+                        // Outside of this function, we must make sure these are only handled while looking for nested clauses 
+
+                        Some(Terminal::Punctuation(Punctuation::BraceClose)) => { 
+                            return Ok(UseTreeClause { 
+                                tree: UseTree { path, kind: UseTreeKind::Simple },
+                                delim: peek,
+                                delim_kind: DelimKind::BraceClose, 
+                            })
+
+                        }
+                        Some(Terminal::Punctuation(Punctuation::Comma)) => { 
+                            return Ok(UseTreeClause { 
+                                tree: UseTree { path, kind: UseTreeKind::Simple },
+                                delim: peek,
+                                delim_kind: DelimKind::Comma, 
+                            })
+                        }
+
+
+                        // Otherwise, we're at the end of this clause.
+                        // If it's a valid top-level keyword, we're done here
+                        // If it's not, that's unexpected
+                        Some(Terminal::Keyword(kw)) if kw.is_top_level() => return Ok(UseTreeClause { 
+                            tree: Self{ path, kind: UseTreeKind::Simple}, 
+                            delim: peek, 
+                            delim_kind: DelimKind::End 
+                        }),
+
+                        _ => return Err(peek.as_err_unexpected()) 
+                    }
                 },
 
-                _ => return Err(peek.as_err_unexpected()) 
-
+                // Otherwise, this is unexpected. 
+                _ => return Err(first.as_err_unexpected())
             }
         }
     }
@@ -182,17 +200,17 @@ impl UseTree {
 
 #[cfg(test)]
 mod test {
-    use crate::parse::tokens::{ RawTokenKind, WordKind };
+    use crate::parse::tokens::{TokenKind, Keyword};
     use crate::parse::{ParseResult, ParseErrorKind};
     use crate::parse::ast::use_tree::UseTreeKind;
-    use crate::parse::{ lexer::TokenStream, TerminalToken} ;
-    use crate::parse::lexer_tests::{ token_stream, assert_eof, assert_terminal };
+    use crate::parse::{ lexer::TokenStream} ;
+    use crate::parse::lexer_tests::{ token_stream, assert_eof, assert_keyword };
 
     use super::UseTree;
 
     fn parse_use(str: &str) -> ParseResult<(TokenStream, UseTree)> { 
         let mut stream = token_stream(str); 
-        assert_terminal(&mut stream, TerminalToken::Use);
+        assert_keyword(&mut stream, Keyword::Use);
         UseTree::parse(&mut stream).map(|tree| (stream, tree))
     }
 
@@ -203,7 +221,7 @@ mod test {
         assert_eq!(tree.kind, UseTreeKind::Simple);
 
         // `use` is a valid top-level keyword, so it should end the parsing gracefully
-        assert_terminal(&mut stream, TerminalToken::Use);
+        assert_keyword(&mut stream, Keyword::Use);
         assert_eof(&mut stream);
     }
 
@@ -211,7 +229,7 @@ mod test {
     fn unexpected_end() { 
         let res = parse_use("use foo::bar errrrar");
         assert!(res.is_err());
-        assert_eq!(res.unwrap_err().kind, ParseErrorKind::Unexpected(RawTokenKind::Word(WordKind::Alpha, "errrrar".to_string())))
+        assert_eq!(res.unwrap_err().kind, ParseErrorKind::Unexpected(TokenKind::Word("errrrar".to_string())))
     }
 
     #[test]
@@ -220,7 +238,7 @@ mod test {
         assert_eq!(tree.path, vec!["foo", "bar", "baz"]);
         assert_eq!(tree.kind, UseTreeKind::Glob); 
 
-        assert_terminal(&mut stream, TerminalToken::Use);
+        assert_keyword(&mut stream, Keyword::Use);
         assert_eof(&mut stream); 
     }
 }

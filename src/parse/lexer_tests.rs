@@ -1,8 +1,8 @@
 use super::ParseResult;
 use super::lexer::TokenStream;
-use super::tokens::{ RawTokenKind, WordKind };
+use super::tokens::{ TokenKind, Keyword };
 
-use super::tokens::TerminalToken;
+use super::tokens::Punctuation;
 
 //
 // Helpers
@@ -15,14 +15,17 @@ pub fn token_stream(str: &str) -> TokenStream {
 pub fn assert_identifier(stream: &mut TokenStream, val: &str) { 
     assert_eq!(stream.next().unwrap().as_identifier().unwrap(), val); 
 }
-pub fn assert_kind(stream: &mut TokenStream, kind: RawTokenKind) { 
+pub fn assert_kind(stream: &mut TokenStream, kind: TokenKind) { 
     assert_eq!(stream.next().unwrap().kind, kind); 
 }
 pub fn assert_eof(stream: &mut TokenStream) { 
-    assert_eq!(stream.next().unwrap().kind, RawTokenKind::EOF); 
+    assert_eq!(stream.next().unwrap().kind, TokenKind::EOF); 
 }
-pub fn assert_terminal(stream: &mut TokenStream, kind: TerminalToken) { 
-    assert_eq!(stream.next().unwrap().as_terminal().unwrap(), kind); 
+pub fn assert_punctuation(stream: &mut TokenStream, expected: Punctuation) { 
+    stream.next().unwrap().expect_punctuation(expected).unwrap()
+}
+pub fn assert_keyword(stream: &mut TokenStream, expected: Keyword) { 
+    stream.next().unwrap().expect_keyword(expected).unwrap()
 }
 
 //
@@ -50,14 +53,8 @@ fn valid_identifiers() {
 
 #[test]
 fn line_comment() -> ParseResult<()> { 
-    let mut stream = token_stream("asdf// jsdklf \"heee\" hoo raaa\n\n/foobar endofline");
+    let mut stream = token_stream("asdf// jsdklf \"heee\" hoo raaa\n\nfoobar endofline");
     assert_identifier(&mut stream, "asdf");
-
-    match stream.next()?.kind { 
-        RawTokenKind::Word(WordKind::Punctuation, str) if str == "/" => {}
-        _ => panic!()
-    }
-
     assert_identifier(&mut stream, "foobar");
     assert_identifier(&mut stream, "endofline");
     assert_eof(&mut stream); 
@@ -83,20 +80,34 @@ fn spacing() {
 }
 
 #[test]
-fn operators() { 
+fn punctuation() { 
     let mut stream = token_stream("asdf @foo% bar #123");
     assert_identifier(&mut stream, "asdf");
-    assert_terminal(&mut stream, TerminalToken::SpecialType);
+    assert_punctuation(&mut stream, Punctuation::SpecialType);
     assert_identifier(&mut stream, "foo");
-    assert_terminal(&mut stream, TerminalToken::Lax);
+    assert_punctuation(&mut stream, Punctuation::Lax);
     assert_identifier(&mut stream, "bar");
-    assert_terminal(&mut stream, TerminalToken::HttpStatus);
+    assert_punctuation(&mut stream, Punctuation::HttpStatus);
 
-    match stream.next().unwrap().kind { 
-        RawTokenKind::Word(WordKind::Number, str) if str == "123" => {}
-        _ => panic!()
-    }
+    assert_eq!(stream.next().unwrap().try_as_number().unwrap(), "123"); 
 
+    assert_eof(&mut stream);
+}
+
+#[test]
+fn multichar_punctuation() { 
+    let mut stream = token_stream("foo :: bar"); 
+    assert_identifier(&mut stream, "foo");
+    assert_punctuation(&mut stream, Punctuation::PathSeparator);
+    assert_identifier(&mut stream, "bar");
+    assert_eof(&mut stream);
+}
+
+#[test]
+fn conjoined_punctuation() { 
+    let mut stream = token_stream(":::");
+    assert_punctuation(&mut stream, Punctuation::PathSeparator);
+    assert_punctuation(&mut stream, Punctuation::Colon);
     assert_eof(&mut stream);
 }
 
@@ -108,7 +119,7 @@ fn string_literal() {
     let mut stream = token_stream("foo \"aa \n\t oo // ee /* aa */ ff \"   bar");
     assert_identifier(&mut stream, "foo");
 
-    if let RawTokenKind::StringLiteral(str) = stream.next().unwrap().kind { 
+    if let TokenKind::StringLiteral(str) = stream.next().unwrap().kind { 
         assert_eq!(str, "aa \n\t oo // ee /* aa */ ff ")
     }
     else { panic!("Expected StringLiteral") }

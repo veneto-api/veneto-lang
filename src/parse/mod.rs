@@ -4,7 +4,7 @@
 mod lexer;
 
 /// This module contains definitions for the tokens emitted by the `lexer`, 
-/// including terminal tokens like operators and keywords.  
+/// including terminal tokens like punctuation and keywords.  
 mod tokens;
 
 /// This contains the representation of the Abstract Syntax Tree emitted by the parser.
@@ -15,15 +15,26 @@ mod lexer_tests;
 
 
 
-use self::tokens::{TerminalToken, Position, RawTokenKind};
+use self::tokens::{Punctuation, Position, TokenKind, Keyword};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseErrorKind { 
-    Unexpected(RawTokenKind),
+    Unexpected(TokenKind),
     UnknownCharacterType, 
 
-    Expected(TerminalToken),
-    ExpectedKeyword, 
+    ExpectedPunctuation(Punctuation),
+    ExpectedKeyword(Keyword),
+    ExpectedIdentifier, 
+    ExpectedNumber, 
+
+    /// The lexer attempted to process a punctuation word that does not correspond to a valid `Punctuation` 
+    UnrecognizedPunctuation(String),
+
+    /// The lexer hit an arbitrary limit while attempting to resolve a word
+    /// (namely a punctuation sequence).
+    /// 
+    /// This might not be necessary but it felt uncomfortable not having one, idk 
+    WordTooLong, 
 }
 #[derive(Debug)]
 pub struct ParseError { 
