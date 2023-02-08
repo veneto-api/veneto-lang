@@ -1,6 +1,15 @@
-/// `data` represents the grammar related to data types, documented in `grammar/data.ebnf `
-pub mod data;
+/// This is parses common miscellaneous expressions; namely, generic identifiers.  
+/// 
+/// This is documented in `grammar/general.ebnf`
+pub mod general;
 
-/// `use_tree` contains everything related to imports and the `use` directive;
+/// This contains everything related to imports and the `use` directive;
 /// heavily inspired by `rustc_ast::ast::UseTree` 
+/// 
+/// This is documented in `grammar/general.ebnf`
 pub mod use_tree;
+
+/// This parses type expressions, as well as top-level type alias directives.
+/// 
+/// This is documented in `general/data.ebnf`
+pub mod types;

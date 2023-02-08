@@ -3,12 +3,12 @@ identifier = /[a-zA-Z_]\w+/ - reserved;
 (* Generics *)
 
 generic_identifier  = identifier [ generic_params ]          ;
-generic_params      =  '<' { generic_identifier ^+ ',' } '>' ;
+generic_params      =  '<' { generic_identifier ^ ',' } '>' ;
 
 
 (* Imports *)
 use = 'use' use_tree ;
-use_tree = use_path '::' ( '*' | '{' [{ use_tree ^+ ',' }] '}' | use_operand );
+use_tree = use_path '::' ( '*' | '{' [{ use_tree ^ ',' }] '}' | use_operand );
 
 use_path = { identifier ^ '::'};
 use_operand = identifier ['as' identifier]; 

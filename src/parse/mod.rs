@@ -15,7 +15,7 @@ mod lexer_tests;
 
 
 
-use self::tokens::{Punctuation, Position, TokenKind, Keyword};
+use self::{tokens::{Punctuation, Position, TokenKind, Keyword, Token}};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseErrorKind { 
@@ -44,28 +44,20 @@ pub struct ParseError {
 
 pub type ParseResult<T> = Result<T, ParseError>;
 
+/// Describes how the clause is terminated and where the TokenStream cursor is pointed, 
+/// so that the calling function knows what to do next. 
+pub enum ClauseDelim { 
+    /// The clause found an explicit end marker, which it consumed
+    Exit, 
+    /// The clause found an explicit continuation marker, which it consumed
+    Continue, 
 
+    /// The clause found a token it does not recognize, which it did not consume
+    Unexpected(Token), 
+}
 
-
-// pub fn parse_literal(input: &str) -> ParseResult<()> { 
-//     let mut lex = lexer::TokenStream::new(input.chars()); 
-
-//     loop { 
-//         let next = lex.next()?;
-//         if next == RawTokenKind::EOF { break } 
-
-//         match next.as_terminal()? { 
-//             TerminalToken::Type => { 
-//                 let name = lex.next()?.as_identifier()?; 
-//                 lex.next()?.expect(TerminalToken::Assign)?;
-//                 let value = lex.next()?.as_identifier()?;
-
-//                 println!("New type named '{name}', aliased to '{value}'");
-//             },
-
-//             _ => return Err(ParseErrorKind::ExpectedKeyword),
-//         }
-//     }
-
-//     Ok(())
-// }
+/// A **clause** is a processed AST node, along with information about how it was terminated.
+/// 
+/// This is especially useful for nestable grammar features like Use Trees or Generic Identifiers.
+/// These are parsed recursively, and the calling stack frame needs to understand whether it should continue or exit its current context.
+pub type ClauseResult<T> = Result<(T, ClauseDelim), ParseError>; 

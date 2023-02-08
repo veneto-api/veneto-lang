@@ -1,4 +1,4 @@
-use crate::parse::{lexer::TokenStream, ParseResult, tokens::{Punctuation, Token, TokenKind, Terminal, Keyword}};
+use crate::parse::{lexer::TokenStream, ParseResult, tokens::{Punctuation, TokenKind, Terminal, Keyword}, ClauseResult, ClauseDelim};
 
 #[derive(PartialEq, Debug)]
 pub enum UseTreeKind { 
@@ -18,56 +18,24 @@ pub struct UseTree {
     kind: UseTreeKind, 
 }
 
-/// This describes how the parsing of a `use` clause ended;
-/// used when determining what to do afterward,
-/// primarily in handling nested `UseTree`s 
-enum DelimKind { 
-    BraceClose, 
-    Comma, 
-
-    /// This describes any other kind of delimiter, whether expected or not
-    End, 
-}
-
-struct UseTreeClause { 
-    tree: UseTree, 
-    delim: Token,
-    delim_kind: DelimKind, 
-}
-
-fn pull_delim(stream: &mut TokenStream) -> ParseResult<(Token, DelimKind)> { 
-    let token = stream.peek()?;
-    match token.as_punctuation() { 
-        Some(Punctuation::BraceClose) => { 
-            stream.next()?;
-            Ok((token, DelimKind::BraceClose))
-        },
+fn pull_delim(stream: &mut TokenStream, result: UseTree) -> ClauseResult<UseTree> { 
+    let peek = stream.peek()?; 
+    match peek.as_punctuation() { 
         Some(Punctuation::Comma) => { 
-            stream.next()?;
-            Ok((token, DelimKind::Comma))
+            stream.next()?; 
+            Ok(( result, ClauseDelim::Continue ))
+        },
+        Some(Punctuation::BraceClose) => { 
+            stream.next()?; 
+            Ok(( result, ClauseDelim::Exit ))
         },
         _ => { 
-            Ok((token, DelimKind::End))
+            Ok(( result, ClauseDelim::Unexpected(peek)))
         }
     }
 }
 
 impl UseTree { 
-
-    /// Parses a nested Use clause, beginning right after the opening brace.
-    fn parse_nested(stream: &mut TokenStream) -> ParseResult<Vec<Self>> { 
-        let mut children = Vec::<Self>::new();
-        loop { 
-            let clause = Self::parse_inner(stream)?;
-            children.push(clause.tree); 
-            match clause.delim_kind { 
-                DelimKind::Comma => continue, 
-                DelimKind::BraceClose => break, 
-                DelimKind::End => return Err(clause.delim.as_err_unexpected())
-            }
-        }
-        Ok(children) 
-    }
 
     /// Parses a single clause within a Use Tree; 
     /// it does this by grabbing tokens until it finds one that cannot be a part of the current clause.
@@ -75,7 +43,7 @@ impl UseTree {
     /// The kind of token it stops at is indicated by the `UseDelim` in the returned tuple;
     /// this way, calling functions can know what token it ends at and act accordingly,
     /// since it works differently inside a nested Use Tree.  
-    fn parse_inner(stream: &mut TokenStream) -> ParseResult<UseTreeClause> { 
+    fn parse_inner(stream: &mut TokenStream) -> ClauseResult<UseTree> { 
         let mut path = Vec::<String>::new();
         
         loop { 
@@ -83,34 +51,27 @@ impl UseTree {
             let first = stream.next()?; 
             match first.kind { 
                 // First we have our two simplest end-of-clause cases - 
-                // end-of-file and glob 
+                // glob
 
-                TokenKind::EOF => return Ok(UseTreeClause { 
-                    tree: UseTree { path, kind: UseTreeKind::Simple }, 
-                    delim: first, 
-                    delim_kind: DelimKind::End 
-                }),
-
-                TokenKind::Punctuation(Punctuation::Glob) => return Ok(UseTreeClause { 
-                    tree: UseTree{ path, kind: UseTreeKind::Glob }, 
-                    delim: first, 
-                    delim_kind: DelimKind::End,
-                }),
+                TokenKind::Punctuation(Punctuation::Glob) => return pull_delim(stream, UseTree{ path, kind: UseTreeKind::Glob }),
 
                 // If it's an open brace, things get fun.
                 // That means this is a nested use, so we recursively parse the next few clauses
                 TokenKind::Punctuation(Punctuation::BraceOpen) => { 
-                    stream.next()?; 
-                    return Ok(UseTreeClause { 
-                        tree: UseTree { 
-                            path,
-                            kind: UseTreeKind::Nested(Self::parse_nested(stream)?)
-                        }, 
-                        // This isn't the correct end delimiter, but it shouldn't matter since this is successful
-                        // I'm sure that will bite us soon 
-                        delim: first, 
-                        delim_kind: DelimKind::End 
-                    })
+                    let mut nested = Vec::<UseTree>::new(); 
+                    loop { 
+                        let (clause, delim) = Self::parse_inner(stream)?; 
+                        nested.push(clause);
+                        match delim { 
+                            ClauseDelim::Continue => continue, 
+                            ClauseDelim::Exit => { 
+                                let result = UseTree { path, kind: UseTreeKind::Nested(nested) };
+                                return pull_delim(stream, result);
+                            },
+                            ClauseDelim::Unexpected(t) => return Err(t.as_err_unexpected()),
+                        }
+                    }
+
                 },
 
                 // And here is the most common scenario. 
@@ -128,55 +89,20 @@ impl UseTree {
                             continue 
                         }
 
-
-
                         // If it's an `as`, handle that junk, then terminate the clause
                         Some(Terminal::Keyword(Keyword::PathAlias)) => { 
                             stream.next()?; 
                             let alias = stream.next()?.try_as_identifier()?; 
-                            let (delim, delim_kind ) = pull_delim(stream)?;
-                            return Ok(UseTreeClause { 
-                                tree: UseTree { 
-                                    path, 
-                                    kind: UseTreeKind::Alias(alias)
-                                },
-                                delim,
-                                delim_kind
-                            })
+                            
+                            let result = UseTree { 
+                                path, 
+                                kind: UseTreeKind::Alias(alias)
+                            };
+                            return pull_delim(stream, result);
                         }
 
-
-                        // These next two are only relevant for parsing nested clauses
-                        // If we encounter a comma or a close brace, we terminate the current clause
-                        // Outside of this function, we must make sure these are only handled while looking for nested clauses 
-
-                        Some(Terminal::Punctuation(Punctuation::BraceClose)) => { 
-                            return Ok(UseTreeClause { 
-                                tree: UseTree { path, kind: UseTreeKind::Simple },
-                                delim: peek,
-                                delim_kind: DelimKind::BraceClose, 
-                            })
-
-                        }
-                        Some(Terminal::Punctuation(Punctuation::Comma)) => { 
-                            return Ok(UseTreeClause { 
-                                tree: UseTree { path, kind: UseTreeKind::Simple },
-                                delim: peek,
-                                delim_kind: DelimKind::Comma, 
-                            })
-                        }
-
-
-                        // Otherwise, we're at the end of this clause.
-                        // If it's a valid top-level keyword, we're done here
-                        // If it's not, that's unexpected
-                        Some(Terminal::Keyword(kw)) if kw.is_top_level() => return Ok(UseTreeClause { 
-                            tree: Self{ path, kind: UseTreeKind::Simple}, 
-                            delim: peek, 
-                            delim_kind: DelimKind::End 
-                        }),
-
-                        _ => return Err(peek.as_err_unexpected()) 
+                        // Otherwise, this is unexpected, terminate the clause
+                        _ => return pull_delim(stream, UseTree { path, kind: UseTreeKind::Simple }),
                     }
                 },
 
@@ -188,20 +114,17 @@ impl UseTree {
 
     /// Parses a `UseTree` with the provided stream;
     /// assuming that the stream is pointing right after the `use` declaration.
-    pub fn parse(stream: &mut TokenStream) -> ParseResult<Self> { 
-        let clause = Self::parse_inner(stream)?;
-        match clause.delim_kind { 
-            DelimKind::End => Ok(clause.tree),
-            _ => Err(clause.delim.as_err_unexpected()),
-        }
+    pub fn expect(stream: &mut TokenStream) -> ParseResult<Self> { 
+        let (clause, _) = Self::parse_inner(stream)?;
+        Ok(clause)
     }
 }
 
 
 #[cfg(test)]
 mod test {
-    use crate::parse::tokens::{TokenKind, Keyword};
-    use crate::parse::{ParseResult, ParseErrorKind};
+    use crate::parse::tokens::{Keyword};
+    use crate::parse::{ParseResult};
     use crate::parse::ast::use_tree::UseTreeKind;
     use crate::parse::{ lexer::TokenStream} ;
     use crate::parse::lexer_tests::{ token_stream, assert_eof, assert_keyword };
@@ -211,7 +134,7 @@ mod test {
     fn parse_use(str: &str) -> ParseResult<(TokenStream, UseTree)> { 
         let mut stream = token_stream(str); 
         assert_keyword(&mut stream, Keyword::Use);
-        UseTree::parse(&mut stream).map(|tree| (stream, tree))
+        UseTree::expect(&mut stream).map(|tree| (stream, tree))
     }
 
     #[test]
@@ -226,13 +149,6 @@ mod test {
     }
 
     #[test]
-    fn unexpected_end() { 
-        let res = parse_use("use foo::bar errrrar");
-        assert!(res.is_err());
-        assert_eq!(res.unwrap_err().kind, ParseErrorKind::Unexpected(TokenKind::Word("errrrar".to_string())))
-    }
-
-    #[test]
     fn glob() { 
         let (mut stream, tree) = parse_use("use foo::bar::baz::* use").unwrap();
         assert_eq!(tree.path, vec!["foo", "bar", "baz"]);
@@ -240,5 +156,34 @@ mod test {
 
         assert_keyword(&mut stream, Keyword::Use);
         assert_eof(&mut stream); 
+    }
+
+    #[test]
+    fn nested() { 
+        let (_, tree) = parse_use("use foo::{ bar::baz::boo, glob::*, asdf::{ jkl, qwerty } }").unwrap(); 
+
+        assert_eq!(tree.path, vec![ "foo" ]);
+        if let UseTreeKind::Nested(outer) = tree.kind { 
+            assert_eq!(outer.len(), 3);
+
+            assert_eq!(outer[0].kind, UseTreeKind::Simple);
+            assert_eq!(outer[0].path, vec![ "bar", "baz", "boo" ]);
+
+            assert_eq!(outer[1].kind, UseTreeKind::Glob); 
+            assert_eq!(outer[1].path, vec![ "glob" ]);
+
+            assert_eq!(outer[2].path, vec!["asdf"]);
+            if let UseTreeKind::Nested(inner) = &outer[2].kind { 
+                assert_eq!(inner.len(), 2); 
+
+                assert_eq!(inner[0].kind, UseTreeKind::Simple);
+                assert_eq!(inner[0].path, vec![ "jkl"]);
+
+                assert_eq!(inner[1].kind, UseTreeKind::Simple);
+                assert_eq!(inner[1].path, vec![ "qwerty" ]);
+            }
+            else { panic!("Expected inner to be nested") }
+        }
+        else { panic!("Expected outer to be nested")}
     }
 }

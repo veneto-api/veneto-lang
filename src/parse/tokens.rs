@@ -134,7 +134,6 @@ pub enum Punctuation {
 
     #[strum(serialize="{")]
     BraceOpen,
-
     #[strum(serialize="}")]
     BraceClose,
 
@@ -161,6 +160,11 @@ pub enum Punctuation {
 
     #[strum(serialize="*")]
     Glob,
+
+    #[strum(serialize="<")]
+    GenericOpen,
+    #[strum(serialize=">")]
+    GenericClose,
 
     // Also of note, if we ever add a slash `/` operator for any reason,
     // we should update the tests to make sure that comment handling works properly
@@ -195,6 +199,7 @@ impl Keyword {
 /// 
 /// I'm abusing this term a bit here, but the idea is that these are a literally-defined token,
 /// rather than something variable like a `Number` or an `Identifier` 
+#[derive(PartialEq, Eq)]
 pub enum Terminal { 
     Punctuation(Punctuation),
     Keyword(Keyword), 
