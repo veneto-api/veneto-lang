@@ -1,4 +1,5 @@
-/// This is parses common miscellaneous expressions; namely, generic identifiers.  
+/// This is parses common miscellaneous expressions.
+/// At the time, that's only generic identifiers, so maybe this module should be renamed.
 /// 
 /// This is documented in `grammar/general.ebnf`
 pub mod general;
@@ -13,3 +14,6 @@ pub mod use_tree;
 /// 
 /// This is documented in `general/data.ebnf`
 pub mod types;
+
+/// This parses interface expressions.
+pub mod interfaces;

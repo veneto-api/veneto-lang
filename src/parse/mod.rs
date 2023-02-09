@@ -43,6 +43,12 @@ pub enum ParseErrorKind {
 
     /// The syntax used is only valid for structs
     SemanticStructOnly(Terminal), 
+
+    /// An unrecognized type was used in an interface.
+    /// 
+    /// Interfaces only support a limited range of types, 
+    /// since their representation is limited to the URI syntax 
+    UnknownInterfaceValueType, 
 }
 
 #[derive(Debug)]

@@ -4,7 +4,7 @@ interface_block = '{' i_body '}';
 
 i_body = '{' [{ i_kvp ^+ ',' }]
 i_kvp = identifier ['?'] ':' i_value_type
-i_value_type = 'string' | 'int' (* more to come *)
+i_value_type = 'string' (* more to come *)
 
 
 (* 
