@@ -3,17 +3,13 @@
     Types
     =====
 *)
-type = (generic_identifier | struct | composite) type_operation; 
+type = (generic_identifier | struct | composite) type_ops; 
 
 type_alias = 'type' generic_identifier '=' type ;
 
  
 (* Struct literals *)
-
-struct = struct_body [{ struct_mods }] ;
-struct_mods = ',' ('in' | 'out') '+' struct_body ;
-
-struct_body  = '{' [{ struct_field ^+ ',' }]  '}'     ;
+struct  = '{' [{ struct_field ^+ ',' }]  '}'     ;
 struct_field = identifier ':' type                     ;
 
 
@@ -24,5 +20,7 @@ c_tuple = '[' [{ type ^+ ',' }] ']' ;
 
 
 (* Type expressions *) 
-type_operation = ['?'] ['%'];
-(* Note that the lax operator '%' semantically must be applied to a struct *)
+type_ops = struct_ops ['?'];
+(* These semantically can only be applied to a struct *)
+struct_ops = ['%'] [{ struct_mods }]
+struct_mods = ',' ('in' | 'out') '+' struct_body ;

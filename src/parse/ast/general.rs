@@ -1,6 +1,6 @@
-use crate::parse::{ClauseResult, ClauseDelim};
+use crate::parse::{ClauseResult, ClauseDelim, ParseResult};
 use crate::parse::{lexer::TokenStream};
-use crate::parse::tokens::Punctuation;
+use crate::parse::tokens::{Punctuation};
 
 /// This is an identifier that can accept generic parameters.
 #[derive(PartialEq, Eq, Debug)]
@@ -11,71 +11,88 @@ pub enum GenericIdentifier {
 
 impl GenericIdentifier { 
 
-    /// Parses a potentially-generic identifier, starting with the provided `base` identifier. 
-    fn parse(stream: &mut TokenStream, base: String) -> ClauseResult<Self> { 
-        let next = stream.peek()?; 
-        
-        match next.as_punctuation() { 
-            Some(Punctuation::GenericOpen) => { 
-                stream.next()?;
+    fn clause_arg(stream: &mut TokenStream) -> ClauseResult<GenericIdentifier> { 
 
-                let mut params = Vec::<GenericIdentifier>::new(); 
-                loop { 
-                    let ident = stream.next()?.try_as_identifier()?;
-                    let (clause, delim) = Self::parse(stream, ident)?;
-                    params.push(clause);
-
-                    match delim { 
-                        ClauseDelim::Continue => continue, 
-                        ClauseDelim::Exit => { 
-                            let result = GenericIdentifier::Generic(base, params);
-                            if stream.peek()?.as_punctuation() == Some(Punctuation::Comma) { 
-                                stream.next()?;
-                                return Ok((result, ClauseDelim::Continue))
-                            } else { 
-                                return Ok((result, delim))
-                            }
-                        },
-
-                        ClauseDelim::Unexpected(t) => return Err(t.as_err_unexpected()) 
-                    }
-
-                }
-
-            },
-
-            Some(Punctuation::Comma) => { 
-                stream.next()?; 
-                Ok((Self::Simple(base), ClauseDelim::Continue))
-            },
-
-            Some(Punctuation::GenericClose) => { 
-                stream.next()?; 
-                Ok((Self::Simple(base), ClauseDelim::Exit))
-            }
-
-            _ => { 
-                Ok((Self::Simple(base), ClauseDelim::Unexpected(next)))
+        fn delim(stream: &mut TokenStream) -> ParseResult<ClauseDelim> { 
+            let peek = stream.peek()?;
+            match peek.as_punctuation() { 
+                Some(Punctuation::Comma) => { 
+                    stream.next()?;
+                    Ok(ClauseDelim::Continue)
+                }, 
+                Some(Punctuation::GenericClose) => {
+                    stream.next()?; 
+                    Ok(ClauseDelim::Exit)
+                },
+                _ => Ok(ClauseDelim::Unexpected(peek))
             }
         }
+        
+        let ident = stream.next()?.try_as_identifier()?; 
+        let peek = stream.peek()?; 
+        
+        if Some(Punctuation::GenericOpen) == peek.as_punctuation() { 
+            stream.next()?; 
+            let args = Self::clause_nested(stream)?;
+            Ok((GenericIdentifier::Generic(ident, args), delim(stream)?))
+        } 
+        else { 
+            Ok((GenericIdentifier::Simple(ident), delim(stream)?))
+        }
+    }
 
+
+    fn clause_nested(stream: &mut TokenStream) -> ParseResult<Vec<GenericIdentifier>> { 
+
+        let mut args = Vec::<GenericIdentifier>::new(); 
+        loop { 
+            let (clause, delim) = Self::clause_arg(stream)?;
+            match delim { 
+                ClauseDelim::Continue => { 
+                    args.push(clause); 
+                    continue; 
+                }, 
+                ClauseDelim::Exit => { 
+                    args.push(clause); 
+                    return Ok(args)
+                },
+                ClauseDelim::Unexpected(t) => return Err(t.as_err_unexpected())
+            }
+        }
+    }
+
+
+    /// Parses a potentially-generic identifier, starting with the provided `base` identifier. 
+    pub fn finish(stream: &mut TokenStream, ident: String) -> ParseResult<Self> { 
+        let peek = stream.peek()?;
+        if Some(Punctuation::GenericOpen) == peek.as_punctuation() { 
+            stream.next()?; 
+            let args = Self::clause_nested(stream)?; 
+            Ok(GenericIdentifier::Generic(ident, args))
+        } 
+        else { 
+            Ok(GenericIdentifier::Simple(ident))
+        }
     }
 }
 
 
 #[cfg(test)]
 mod test {
-    use crate::parse::{lexer_tests::token_stream, ClauseResult};
+    use crate::parse::{lexer_tests::{token_stream, assert_punctuation}, ParseResult, lexer::TokenStream, tokens::Punctuation, ParseErrorKind};
 
     use super::GenericIdentifier;
 
-    fn parse_gid(input: &str) -> ClauseResult<GenericIdentifier>{ 
+    fn parse_gid(input: &str) -> ParseResult<(TokenStream, GenericIdentifier)>{ 
         let mut stream = token_stream(input); 
         let base = stream.next().unwrap().try_as_identifier().unwrap(); 
-        GenericIdentifier::parse(&mut stream, base)
+        GenericIdentifier::finish(&mut stream, base).map(
+            |res| (stream, res) 
+        )
     }
-    fn expect_gid(input: &str, expected: GenericIdentifier) { 
-        assert_eq!(parse_gid(input).unwrap().0, expected); 
+    fn assert_gid(input: &str, expected: GenericIdentifier) { 
+        let (_, gid) = parse_gid(input).unwrap();
+        assert_eq!(gid, expected); 
     }
 
     macro_rules! gid {
@@ -96,22 +113,32 @@ mod test {
  
     #[test]
     fn simple() { 
-        expect_gid("foo", gid!("foo"));
+        let (mut stream, gid) = parse_gid("foo,").unwrap(); 
+        assert_eq!(gid, gid!("foo"));
+        assert_punctuation(&mut stream, Punctuation::Comma); 
     }
 
     #[test] 
     fn single_param() { 
-        expect_gid("foo<bar>", gid!("foo"<"bar">))
+        assert_gid("foo<bar>", gid!("foo"<"bar">))
     }
 
     #[test]
     fn multi_param() { 
-        expect_gid("foo<bar, baz>", gid!("foo"<"bar", "baz">))
+        assert_gid("foo<bar, baz>", gid!("foo"<"bar", "baz">))
     }
 
     #[test]
     fn complex() { 
+        let (mut stream, gid) = parse_gid("foo<bar, baz<asdf, ree>, aaa>,").unwrap();
         let inner = gid!("baz"<"asdf", "ree">);
-        expect_gid("foo<bar, baz<asdf, ree>, aaa>", gid!("foo"<"bar", inner, "aaa">));
+        assert_eq!(gid, gid!("foo"<"bar", inner, "aaa">));
+        assert_punctuation(&mut stream, Punctuation::Comma);
+    }
+
+    #[test]
+    fn fail_trail() { 
+        let res = parse_gid("asdf<jkl, bar,>"); 
+        assert!(matches!(res.unwrap_err().kind, ParseErrorKind::ExpectedIdentifier))
     }
 }

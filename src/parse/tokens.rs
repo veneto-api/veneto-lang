@@ -8,14 +8,21 @@ use super::{ParseResult, ParseError, ParseErrorKind};
 #[allow(clippy::upper_case_acronyms)]
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum TokenKind { 
+    /// This represents alphanumeric characters, dashes, and underscores.
+    /// It could be a `Keyword`, or an identifier.
+    /// 
+    /// We discourage pattern matching against this directly,
+    /// as the logic that denotes an identifier could change.
+    /// Use helpers like `as_identifier` and `as_keyword` instead
     Word(String), 
+
     Number(String), 
     Punctuation(Punctuation), 
     StringLiteral(String), 
     EOF, 
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Token { 
     pub kind: TokenKind, 
     pub position: Position, 
@@ -116,6 +123,10 @@ impl Token {
     pub fn as_err_unexpected(&self) -> ParseError { 
         ParseError { kind: ParseErrorKind::Unexpected(self.kind.clone()), position: self.position }
     }
+
+    pub fn as_semantic_error(&self, err: eyre::Error) -> ParseError { 
+        ParseError { kind: ParseErrorKind::Semantic(err), position: self.position }
+    }
 }
 
 
@@ -137,6 +148,11 @@ pub enum Punctuation {
     #[strum(serialize="}")]
     BraceClose,
 
+    #[strum(serialize="[")]
+    BracketOpen, 
+    #[strum(serialize="]")]
+    BracketClose, 
+
     #[strum(serialize=":")]
     Colon,
 
@@ -155,6 +171,9 @@ pub enum Punctuation {
     #[strum(serialize="%")]
     Lax,
 
+    #[strum(serialize="?")]
+    Optional,
+
     #[strum(serialize="::")]
     PathSeparator, 
 
@@ -165,6 +184,9 @@ pub enum Punctuation {
     GenericOpen,
     #[strum(serialize=">")]
     GenericClose,
+
+    #[strum(serialize="+")]
+    StructExtension,
 
     // Also of note, if we ever add a slash `/` operator for any reason,
     // we should update the tests to make sure that comment handling works properly
@@ -185,6 +207,9 @@ pub enum Keyword {
 
     #[strum(serialize="as")]
     PathAlias, 
+
+    In, 
+    Out, 
 
 }
 

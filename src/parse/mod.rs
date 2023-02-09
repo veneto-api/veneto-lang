@@ -17,7 +17,7 @@ mod lexer_tests;
 
 use self::{tokens::{Punctuation, Position, TokenKind, Keyword, Token}};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum ParseErrorKind { 
     Unexpected(TokenKind),
     UnknownCharacterType, 
@@ -35,6 +35,9 @@ pub enum ParseErrorKind {
     /// 
     /// This might not be necessary but it felt uncomfortable not having one, idk 
     WordTooLong, 
+
+    /// A semantic error while parsing
+    Semantic(eyre::Error),
 }
 #[derive(Debug)]
 pub struct ParseError { 

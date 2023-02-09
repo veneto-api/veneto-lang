@@ -50,9 +50,7 @@ impl UseTree {
 
             let first = stream.next()?; 
             match first.kind { 
-                // First we have our two simplest end-of-clause cases - 
-                // glob
-
+                // First we have the simplest end-of-clause case - the glob
                 TokenKind::Punctuation(Punctuation::Glob) => return pull_delim(stream, UseTree{ path, kind: UseTreeKind::Glob }),
 
                 // If it's an open brace, things get fun.
