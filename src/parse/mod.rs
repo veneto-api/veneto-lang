@@ -18,7 +18,7 @@ use std::{backtrace::Backtrace};
 
 use self::{tokens::{Punctuation, Position, TokenKind, Keyword, Token, Terminal}};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ParseErrorKind { 
     Unexpected(TokenKind),
     UnknownCharacterType, 

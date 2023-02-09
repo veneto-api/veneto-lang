@@ -1,4 +1,4 @@
-use crate::parse::{ClauseResult, ClauseDelim};
+use crate::parse::{ClauseResult, ClauseDelim, ParseErrorKind};
 use crate::parse::{lexer::TokenStream, ParseResult};
 use crate::parse::tokens::{Punctuation, TokenKind, Keyword, Terminal};
 
@@ -151,6 +151,9 @@ impl Type {
                     if typ.in_plus.is_some() { 
                         return Err(peek.as_semantic_error("This struct already has an `in +` modifier"));
                     }
+                    if !matches!(typ.kind, TypeKind::Struct(_)) { 
+                        return Err(peek.as_err(ParseErrorKind::SemanticStructOnly(Terminal::Keyword(Keyword::In))))
+                    }
 
                     stream.next()?;
                     typ.in_plus = Some(parse_extension(stream)?);
@@ -159,6 +162,9 @@ impl Type {
                 Some(Terminal::Keyword(Keyword::Out)) => { 
                     if typ.out_plus.is_some() { 
                         return Err(peek.as_semantic_error("This struct already has an `out +` modifier"));
+                    }
+                    if !matches!(typ.kind, TypeKind::Struct(_)) { 
+                        return Err(peek.as_err(ParseErrorKind::SemanticStructOnly(Terminal::Keyword(Keyword::Out))))
                     }
 
                     stream.next()?;
@@ -259,7 +265,9 @@ fn finish_tuple(stream: &mut TokenStream) -> ParseResult<Vec<Type>> {
 #[cfg(test)]
 mod test {
     use crate::parse::TestUnwrap; 
-    use crate::parse::{ParseResult, lexer::TokenStream, lexer_tests::{token_stream, assert_punctuation}, ast::general::GenericIdentifier, tokens::Punctuation, ParseErrorKind};
+    use crate::parse::{ParseResult, lexer::TokenStream, lexer_tests::{token_stream, assert_punctuation}, ParseErrorKind};
+    use super::GenericIdentifier; 
+    use crate::parse::tokens::{ Terminal, Keyword, Punctuation }; 
 
     use super::{Type, TypeKind, StructField};
  
@@ -386,8 +394,8 @@ mod test {
     }
 
     #[test]
-    fn struct_mod() { 
-        assert_type("{ foo: bar } out+ {asdf: ree}", Type { 
+    fn struct_mod_out() { 
+        assert_type("{ foo: bar } out + {asdf: ree}", Type { 
             kind: TypeKind::Struct(vec![ StructField { 
                 name: "foo".to_string(), 
                 typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("bar".to_string()))),
@@ -401,5 +409,59 @@ mod test {
                 typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("ree".to_string()))),
             }])
         })
+    }
+    #[test]
+    fn struct_mod_both() { 
+        assert_type("{ foo: bar } out + {asdf: ree} in + {}", Type { 
+            kind: TypeKind::Struct(vec![ StructField { 
+                name: "foo".to_string(), 
+                typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("bar".to_string()))),
+            }]),
+
+            optional: false, 
+
+            in_plus: Some(vec![ ]), 
+            out_plus: Some(vec![ StructField { 
+                name: "asdf".to_string(), 
+                typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("ree".to_string()))),
+            }])
+        })
+    }
+
+    #[test]
+    fn struct_mod_duplicates() { 
+        let res = parse_type("{ foo: bar } out + { foo: bar } out + {foo : bar}");
+        assert!(matches!(res.unwrap_err().kind, ParseErrorKind::Semantic(_)));
+
+        let res = parse_type("{ foo: bar } out + { foo: bar } in + {foo : bar} out + {}");
+        assert!(matches!(res.unwrap_err().kind, ParseErrorKind::Semantic(_)));
+    }
+
+    #[test]
+    fn struct_mod_type_err() { 
+        let res = parse_type("[ foo<T> ] out + { foo: bar }");
+        assert_eq!(res.unwrap_err().kind, ParseErrorKind::SemanticStructOnly(Terminal::Keyword(Keyword::Out)));
+
+        let res = parse_type("[ foo<T> ] in + { foo: bar }");
+        assert_eq!(res.unwrap_err().kind, ParseErrorKind::SemanticStructOnly(Terminal::Keyword(Keyword::In)));
+    }
+
+    #[test]
+    fn optional_generic() {
+        assert_type("foo<T>?", Type { 
+            kind: TypeKind::Identifier(GenericIdentifier::Generic(
+                "foo".to_string(), 
+                vec![ GenericIdentifier::Simple("T".to_string()) ]
+            )),
+            optional: true, 
+            in_plus: None, 
+            out_plus: None, 
+        })
+    }
+
+    #[test]
+    fn optional_duplicate() { 
+        let res = parse_type("foo??");
+        assert!(matches!(res.unwrap_err().kind, ParseErrorKind::Semantic(_)));
     }
 }
