@@ -22,5 +22,5 @@ c_tuple = '[' [{ type ^+ ',' }] ']' ;
 (* Type expressions *) 
 type_ops = struct_ops ['?'];
 (* These semantically can only be applied to a struct *)
-struct_ops = ['%'] [{ struct_mods }]
-struct_mods = ',' ('in' | 'out') '+' struct_body ;
+struct_ops = [{ struct_mods }]
+struct_mods = ('in' | 'out') '+' struct_body ;

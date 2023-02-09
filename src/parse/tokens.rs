@@ -250,8 +250,11 @@ impl Keyword {
 
 /// A "terminal" symbol - i.e. a punctuation or a keyword.
 /// 
-/// I'm abusing this term a bit here, but the idea is that these are a literally-defined token,
-/// rather than something variable like a `Number` or an `Identifier` 
+/// `Punctuation` has to be separate from `Word` because of the different lexing rules,
+/// but this enum exists for convenience in cases when the parser needs to handle both at the same time
+/// 
+/// This is arguably an abuse of notation, but it simply refers to a literally-defined symbol,
+/// rather than a variable expression like an identifier.  
 #[derive(PartialEq, Eq, Debug)]
 pub enum Terminal { 
     Punctuation(Punctuation),

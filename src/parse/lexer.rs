@@ -44,6 +44,10 @@ impl<'a> UnitStream<'a> {
 
     fn position(&self) -> Position { self.position }
 
+    //TAG: POSITION_DRIFT
+    // The position here doesn't account for backtracking - that's a later problem
+    // https://veneto.notion.site/Position-drifts-in-lexer-c98e2380f3f646d891f2da09f75f5999
+
     /// Takes the next character, from either the queue or the source stream.
     fn inner_next(&mut self) -> Option<char> { 
         let next = self.peeked.pop_front().or_else(|| self.chars.next());

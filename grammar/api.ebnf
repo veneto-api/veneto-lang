@@ -58,8 +58,9 @@ links_block = [{ link ^+ ',' }] ;
 link = identifier '->' ['?'] rc_reference ;
 
 
-rc_method = method_name { '->' method_response ^ ',' } ;
+rc_method = method_name [method_input] { '->' method_response ^ ',' } ;
 method_name = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE' ;
+method_input = type ['%'];
 method_status = '#' Number;
 method_response = method_status [rc_data] | rc_data ;
 
