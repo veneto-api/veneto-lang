@@ -182,8 +182,14 @@ impl StructField {
         
                 let peek = stream.peek()?; 
                 match peek.as_punctuation() { 
-                    Some(Punctuation::Comma) => Ok((res, ClauseDelim::Continue)), 
-                    Some(Punctuation::BraceClose) => Ok((res, ClauseDelim::Exit)),
+                    Some(Punctuation::Comma) => { 
+                        stream.next()?; 
+                        Ok((res, ClauseDelim::Continue))
+                    }, 
+                    Some(Punctuation::BraceClose) => { 
+                        stream.next()?; 
+                        Ok((res, ClauseDelim::Exit))
+                    },
                     _ => Err(peek.as_err_unexpected())
                 }
             },
@@ -228,6 +234,7 @@ impl Struct {
 
         loop { 
             if let Some(Punctuation::Comma) = stream.peek()?.as_punctuation() { 
+                stream.next()?; 
                 let kw = stream.next()?;
                 match kw.as_keyword() { 
                     Some(Keyword::In) => { 
@@ -380,5 +387,89 @@ mod test {
                 optional: false, 
             })
         ))
+    }
+
+    #[test]
+    fn struct_array() { 
+        assert_type_kind("{ foo: bar }[]", TypeKind::Array(Box::new(Type { 
+            kind: TypeKind::Struct(Struct { 
+                body: vec![ StructField { 
+                    name: "foo".to_string(),
+                    typ: Type { 
+                        kind: TypeKind::Identifier(GenericIdentifier::Simple("bar".to_string())), 
+                        optional: false, 
+                        lax: false, 
+                    },
+                } ],
+                in_plus: None,
+                out_plus: None, 
+            }),
+            lax: false, 
+            optional: false, 
+        })))
+    }
+
+    #[test]
+    fn tuple_array() { 
+        assert_type_kind("[foo][]", TypeKind::Array(Box::new(Type { 
+            kind: TypeKind::Tuple(vec![ 
+                Type { 
+                    kind: TypeKind::Identifier(GenericIdentifier::Simple("foo".to_owned())),
+                    optional: false, 
+                    lax: false, 
+                }
+            ]),
+            optional: false, 
+            lax: false, 
+        })))
+    }
+
+    #[test] 
+    fn complex_struct() { 
+        assert_type_kind("{ foo: bar[], baz: generic<type> }", TypeKind::Struct(Struct { 
+            body: vec! [ 
+                StructField { 
+                    name: "foo".to_string(), 
+                    typ: Type { 
+                        kind: TypeKind::Array(Box::new(Type { 
+                            kind: TypeKind::Identifier(GenericIdentifier::Simple("bar".to_string())), 
+                            optional: false, 
+                            lax: false, 
+                        })), 
+                        optional: false, 
+                        lax: false, 
+                    }
+                },
+                StructField { 
+                    name: "baz".to_string(), 
+                    typ: Type { 
+                        kind: TypeKind::Identifier(GenericIdentifier::Generic(
+                            "generic".to_string(), 
+                            vec![ GenericIdentifier::Simple("type".to_string()) ],
+                        )),
+                        optional: false, 
+                        lax: false, 
+                    }
+                }
+            ],
+            in_plus: None, 
+            out_plus: None, 
+        }))
+    }
+
+    #[test]
+    fn struct_mod() { 
+        assert_type_kind("{ foo: bar }, out+ {asdf: ree}", TypeKind::Struct(Struct { 
+            body: vec![ StructField { 
+                name: "foo".to_string(), 
+                typ: Type { kind: TypeKind::Identifier(GenericIdentifier::Simple("bar".to_string())), lax: false, optional: false }
+            }],
+
+            in_plus: None, 
+            out_plus: Some(vec![ StructField { 
+                name: "asdf".to_string(), 
+                typ: Type { kind: TypeKind::Identifier(GenericIdentifier::Simple("ree".to_string())), lax: false, optional: false }
+            }])
+        }))
     }
 }
