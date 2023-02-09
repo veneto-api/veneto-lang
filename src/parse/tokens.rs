@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{str::FromStr, backtrace::Backtrace};
 use strum_macros::EnumString;
 
 use super::{ParseResult, ParseError, ParseErrorKind};
@@ -57,7 +57,11 @@ impl Token {
             }
         } 
 
-        Err(ParseError { kind: ParseErrorKind::ExpectedPunctuation(expected), position: self.position })
+        Err(ParseError { 
+            kind: ParseErrorKind::ExpectedPunctuation(expected), 
+            position: self.position,
+            backtrace: Backtrace::capture(),
+        })
     }
 
     /// Returns the `Keyword` if this token represents one, otherwise `None` 
@@ -81,7 +85,11 @@ impl Token {
                 return Ok(())
             }
         }
-        Err(ParseError { kind: ParseErrorKind::ExpectedKeyword(expected), position: self.position })
+        Err(ParseError { 
+            kind: ParseErrorKind::ExpectedKeyword(expected), 
+            position: self.position,
+            backtrace: Backtrace::capture(),
+        })
     }
 
     /// Returns a `Terminal` sum type if this token matches an `Punctuation` or `Keyword`, otherwise `None` 
@@ -107,7 +115,11 @@ impl Token {
         if let TokenKind::Word(str) = self.kind.clone() { 
             Ok(str)
         } else { 
-            Err(ParseError { kind: ParseErrorKind::ExpectedIdentifier, position: self.position })
+            Err(ParseError { 
+                kind: ParseErrorKind::ExpectedIdentifier, 
+                position: self.position,
+                backtrace: Backtrace::capture(),
+            })
         }
     }
 
@@ -115,17 +127,33 @@ impl Token {
         if let TokenKind::Number(str) = self.kind.clone() { 
             Ok(str) 
         } else { 
-            Err(ParseError { kind: ParseErrorKind::ExpectedNumber, position: self.position })
+            Err(ParseError { 
+                kind: ParseErrorKind::ExpectedNumber, 
+                position: self.position,
+                backtrace: Backtrace::capture(),
+            })
         }
     }
 
     /// Helper method to convert a `RawToken` to an "Unexpected ____" error
     pub fn as_err_unexpected(&self) -> ParseError { 
-        ParseError { kind: ParseErrorKind::Unexpected(self.kind.clone()), position: self.position }
+        ParseError { 
+            kind: ParseErrorKind::Unexpected(self.kind.clone()), 
+            position: self.position,
+            backtrace: Backtrace::capture(),
+        }
     }
 
-    pub fn as_semantic_error(&self, err: eyre::Error) -> ParseError { 
-        ParseError { kind: ParseErrorKind::Semantic(err), position: self.position }
+    pub fn as_semantic_error(&self, msg: &'static str) -> ParseError { 
+        ParseError { 
+            kind: ParseErrorKind::Semantic(msg), 
+            position: self.position,
+            backtrace: Backtrace::capture(),
+        }
+    }
+
+    pub fn as_err(&self, err: ParseErrorKind) -> ParseError { 
+        ParseError { kind: err, position: self.position, backtrace: Backtrace::capture(), }
     }
 }
 
@@ -224,7 +252,7 @@ impl Keyword {
 /// 
 /// I'm abusing this term a bit here, but the idea is that these are a literally-defined token,
 /// rather than something variable like a `Number` or an `Identifier` 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum Terminal { 
     Punctuation(Punctuation),
     Keyword(Keyword), 

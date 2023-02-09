@@ -14,8 +14,9 @@ mod ast;
 mod lexer_tests;
 
 
+use std::{backtrace::Backtrace};
 
-use self::{tokens::{Punctuation, Position, TokenKind, Keyword, Token}};
+use self::{tokens::{Punctuation, Position, TokenKind, Keyword, Token, Terminal}};
 
 #[derive(Debug)]
 pub enum ParseErrorKind { 
@@ -36,16 +37,44 @@ pub enum ParseErrorKind {
     /// This might not be necessary but it felt uncomfortable not having one, idk 
     WordTooLong, 
 
-    /// A semantic error while parsing
-    Semantic(eyre::Error),
+    /// A miscellaneous semantic error while parsing,
+    /// described by its associated message.
+    Semantic(&'static str),
+
+    /// The syntax used is only valid for structs
+    SemanticStructOnly(Terminal), 
 }
+
 #[derive(Debug)]
 pub struct ParseError { 
     kind: ParseErrorKind,
     position: Position,
+    backtrace: Backtrace,
 }
 
 pub type ParseResult<T> = Result<T, ParseError>;
+
+#[cfg(test)]
+pub trait TestUnwrap<T> { 
+    fn test_unwrap(self) -> T; 
+}
+#[cfg(test)]
+impl<T> TestUnwrap<T> for ParseResult<T> {
+    fn test_unwrap(self) -> T {
+        match self { 
+            Ok(x) => x,
+            Err(err) => { 
+                println!("ParseError at {}:{}: {:?}", err.position.line, err.position.col, err.kind);
+                println!("{}", err.backtrace);
+
+                // Currently, abort-on-panic is ignored during testing
+                // So I'm doing this hack nonsense instead, 
+                // so that only the `ParseError` stacktrace gets printed and not the panic one which is always irrelevant
+                std::process::abort()
+            }
+        }
+    }
+}
 
 /// Describes how the clause is terminated and where the TokenStream cursor is pointed, 
 /// so that the calling function knows what to do next. 

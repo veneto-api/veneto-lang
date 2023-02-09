@@ -1,3 +1,4 @@
+use std::backtrace::Backtrace;
 use std::fmt::Debug;
 use std::str::FromStr;
 use std::{str::Chars, collections::VecDeque};
@@ -104,6 +105,7 @@ impl<'a> UnitStream<'a> {
                 None => return Err(ParseError{
                     kind: ParseErrorKind::Unexpected(TokenKind::EOF),
                     position: self.position,
+                    backtrace: Backtrace::capture(),
                 }),
                 Some(ch) => { 
                     if ch == expected { return Ok(()) }
@@ -122,6 +124,7 @@ impl<'a> UnitStream<'a> {
                 None => return Err(ParseError{
                     kind: ParseErrorKind::Unexpected(TokenKind::EOF),
                     position: self.position,
+                    backtrace: Backtrace::capture(),
                 }),
                 Some(ch) => { 
                     if ch == expected { return Ok(str) }
@@ -312,7 +315,11 @@ impl<'a> RawTokenStream<'a> {
                         loop { 
                             size_i += 1;
                             if size_i > size_limit { 
-                                return Err(ParseError { kind: ParseErrorKind::WordTooLong, position })
+                                return Err(ParseError { 
+                                    kind: ParseErrorKind::WordTooLong, 
+                                    position,
+                                    backtrace: Backtrace::capture(), 
+                                })
                             }
 
                             let next = self.inner_next()?; 
@@ -341,11 +348,19 @@ impl<'a> RawTokenStream<'a> {
                             return Ok(token)
 
                         } else { 
-                            return Err(ParseError { kind: ParseErrorKind::UnrecognizedPunctuation(word), position })
+                            return Err(ParseError { 
+                                kind: ParseErrorKind::UnrecognizedPunctuation(word), 
+                                position,
+                                backtrace: Backtrace::capture(),
+                            })
                         }
                     }
                     else { 
-                        return Err(ParseError { kind: ParseErrorKind::UnknownCharacterType, position })
+                        return Err(ParseError { 
+                            kind: ParseErrorKind::UnknownCharacterType, 
+                            position,
+                            backtrace: Backtrace::capture(),
+                        })
                     }
                 }
             }
