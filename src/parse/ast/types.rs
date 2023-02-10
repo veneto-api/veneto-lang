@@ -48,7 +48,7 @@ impl From<InnerTypeKind> for TypeKind {
 /// that can be a reference to an existing type, or a new one. 
 #[derive(PartialEq, Debug)]
 pub struct Type { 
-    kind: TypeKind, 
+    pub kind: TypeKind, 
     
     /// If `true`, this type has been marked optional with a `?`.  
     /// 
@@ -56,15 +56,15 @@ pub struct Type {
     /// This will invalidate the current system of assuming that there's only one. 
     /// 
     /// https://veneto.notion.site/Unions-Monadic-Optionals-e39088b0b78e48ebafb941faef447dcb
-    optional: bool, 
+    pub optional: bool, 
 
 
     /// The fields added with the `in +` modifier.
     /// Only semantically valid for structs.
-    in_plus: Option<StructBody>, 
+    pub in_plus: Option<StructBody>, 
     /// The fields added with the `out +` modifier 
     /// Only semantically valid for structs.
-    out_plus: Option<StructBody>, 
+    pub out_plus: Option<StructBody>, 
 }
 
 /// This is a Struct's body, which is just its set of fields
@@ -73,10 +73,10 @@ pub type StructBody = Vec<StructField>;
 /// This is an individual field declaration within a `Struct`
 #[derive(PartialEq, Debug)]
 pub struct StructField { 
-    name: String, 
+    pub name: String, 
     /// This is the field's type, 
     /// abbreviated to `typ` because `type` is a reserved keyword
-    typ: Type, 
+    pub typ: Type, 
 }
 
 impl Type { 
@@ -148,7 +148,7 @@ impl Expectable for Type {
                 
                 Some(Terminal::Keyword(Keyword::In)) => { 
                     if typ.in_plus.is_some() { 
-                        return Err(peek.as_semantic_error("This struct already has an `in +` modifier"));
+                        return Err(peek.as_err(ParseErrorKind::SemanticDuplicate));
                     }
                     if !matches!(typ.kind, TypeKind::Struct(_)) { 
                         return Err(peek.as_err(ParseErrorKind::SemanticStructOnly(Terminal::Keyword(Keyword::In))))
@@ -160,7 +160,7 @@ impl Expectable for Type {
 
                 Some(Terminal::Keyword(Keyword::Out)) => { 
                     if typ.out_plus.is_some() { 
-                        return Err(peek.as_semantic_error("This struct already has an `out +` modifier"));
+                        return Err(peek.as_err(ParseErrorKind::SemanticDuplicate));
                     }
                     if !matches!(typ.kind, TypeKind::Struct(_)) { 
                         return Err(peek.as_err(ParseErrorKind::SemanticStructOnly(Terminal::Keyword(Keyword::Out))))
@@ -262,7 +262,7 @@ fn finish_tuple(stream: &mut TokenStream) -> ParseResult<Vec<Type>> {
 
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use crate::parse::TestUnwrap; 
     use crate::parse::ast::Expectable;
     use crate::parse::{ParseResult, lexer::TokenStream, lexer_tests::{token_stream, assert_punctuation}, ParseErrorKind};
@@ -286,7 +286,8 @@ mod test {
         let (_, typ) = parse_type(input).test_unwrap();
         assert_eq!(typ.kind, expected);
     }
-    fn make_simple_type(kind: TypeKind) -> Type { 
+
+    pub fn make_simple_type(kind: TypeKind) -> Type { 
         Type { 
             kind,  
             optional: false, 
@@ -431,10 +432,10 @@ mod test {
     #[test]
     fn struct_mod_duplicates() { 
         let res = parse_type("{ foo: bar } out + { foo: bar } out + {foo : bar}");
-        assert!(matches!(res.unwrap_err().kind, ParseErrorKind::Semantic(_)));
+        assert!(matches!(res.unwrap_err().kind, ParseErrorKind::SemanticDuplicate));
 
         let res = parse_type("{ foo: bar } out + { foo: bar } in + {foo : bar} out + {}");
-        assert!(matches!(res.unwrap_err().kind, ParseErrorKind::Semantic(_)));
+        assert!(matches!(res.unwrap_err().kind, ParseErrorKind::SemanticDuplicate));
     }
 
     #[test]

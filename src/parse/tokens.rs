@@ -250,6 +250,7 @@ pub enum Keyword {
     Out, 
 
     // in resource classes
+    Extends, 
     Data,
     Links, 
     // (interface already defined) 

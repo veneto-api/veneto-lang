@@ -44,6 +44,9 @@ pub enum ParseErrorKind {
     /// The syntax used is only valid for structs
     SemanticStructOnly(Terminal), 
 
+    /// The token begins a duplicate declaration
+    SemanticDuplicate,
+
     /// An unrecognized type was used in an interface.
     /// 
     /// Interfaces only support a limited range of types, 
@@ -51,6 +54,9 @@ pub enum ParseErrorKind {
     UnknownInterfaceValueType, 
 
     UnknownSpecialType, 
+
+    /// The method name is not recognized as an HTTP verb
+    UnknownMethodName, 
 }
 
 #[derive(Debug)]

@@ -4,7 +4,7 @@ use std::str::FromStr;
 use std::{str::Chars, collections::VecDeque};
 
 use super::{ ParseResult, ParseErrorKind, ParseError };
-use super::tokens::{ Token, TokenKind, Position, Punctuation };
+use super::tokens::{ Token, TokenKind, Position, Punctuation, Keyword };
 
 #[allow(clippy::upper_case_acronyms)]
 enum Unit { 
@@ -437,6 +437,19 @@ impl<'a> TokenStream<'a> {
                 Ok(true)
             },
             _ => Ok(false)
+        }
+    }
+
+    /// Peek the next token from the stream.
+    /// If it matches the provided keyword, advance the cursor and return `true`
+    /// Otherwise, return `false`.  
+    pub fn peek_for_keyword(&mut self, expected: Keyword) -> ParseResult<bool> { 
+        match self.peek()?.as_keyword() { 
+            Some(x) if x == expected => { 
+                self.next()?;
+                Ok(true)
+            },
+            _ => Ok(false) 
         }
     }
 

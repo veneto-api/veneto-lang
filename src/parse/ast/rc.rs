@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::str::FromStr;
 
 use strum_macros::{EnumString, Display};
@@ -9,22 +11,113 @@ use crate::parse::ast::general::GenericIdentifier;
 
 use super::{Expectable, types::Type, interfaces::InterfaceExpression, Peekable};
 
-pub struct ResourceClass { 
-    /// The identifier for this RC, 
-    /// including its generic params, and perhaps flags in the future 
-    /// 
-    /// TAG: [RC_FLAGS]
-    pub ident : RCIdentifier, 
+/// The declaration clause of a Resource Class,
+/// including its identifier and whether or not it was extended.
+/// 
+/// This exists to handle parameters (generics, and flags in the future) in the declaration - 
+/// currently we have the limitation that flags cannot be defined for extended Resource Classes
+/// 
+/// TAG: RC_FLAGS
+pub enum RCDeclaration { 
+    /// A non-extended Resource Class, which may have parameters
+    Basic(RCIdentifier), 
 
-    /// If `Some`, then this RC extends the referenced RC 
-    pub extends : Option<RCIdentifier>
+    /// An extended resource class;
+    /// the `String` is its identifier (it may not have parameters),
+    /// the `RCIdentifier` references the extended RC (it may have parameters),
+    Extended(String, RCIdentifier), 
 }
+
+
+/// The body of a resource class,
+/// beginning with an open brace
+pub struct ResourceClass { 
+    /// The declaration for this resource class,
+    /// including its parameter information
+    pub declaration: RCDeclaration, 
+
+    /// The base data type declared with the `data` keyword
+    /// 
+    /// (This cannot be a reference to another RC at this time)
+    pub data : Option<Type>, 
+
+    /// The interface expresssion (reference or literal) declared for this RC
+    pub interface : Option<InterfaceExpression>,
+
+    pub links : Option<LinksBlock>,
+
+    pub methods : HashMap<MethodName, Method>,
+}
+impl Peekable for ResourceClass { 
+    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
+        if stream.peek_for_keyword(Keyword::Resource)? { 
+ 
+            let declaration = { 
+                let ident = RCIdentifier::parse_expect(stream)?; 
+
+                if stream.peek_for_keyword(Keyword::Extends)? { 
+
+                    if ident.has_modifiers() { 
+                        let err_ref = stream.peek()?; 
+                        return Err(err_ref.as_semantic_error("Resource classes cannot have modifiers if they are extended"))
+                    }
+                    else { 
+                        RCDeclaration::Extended(ident.base, RCIdentifier::parse_expect(stream)?)
+                    }
+    
+                }
+                else { RCDeclaration::Basic(ident) }
+            };
+
+            let mut data : Option<Type> = None; 
+            let mut interface : Option<InterfaceExpression> = None;
+            let mut links : Option<LinksBlock> = None; 
+            let mut methods = HashMap::<MethodName, Method>::new(); 
+
+            stream.next()?.expect_punctuation(Punctuation::BraceOpen)?; 
+            loop { 
+
+                if stream.peek_for_keyword(Keyword::Data)? { 
+                    data = Some(Type::parse_expect(stream)?);
+                }
+                else if stream.peek_for_keyword(Keyword::Interface)? { 
+                    interface = Some(InterfaceExpression::parse_expect(stream)?);
+                }
+                else if stream.peek_for_keyword(Keyword::Links)? { 
+                    links = Some(LinksBlock::parse_expect(stream)?);
+                }
+                else if stream.peek_for_puncutation(Punctuation::BraceClose)? { 
+                    break
+                }
+                else { 
+                    let err_ref = stream.peek()?; 
+                    let method = Method::parse_expect(stream)?; 
+                    match methods.entry(method.name) { 
+                        Entry::Occupied(_) => { 
+                            return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
+                        },
+                        Entry::Vacant(entry) => { 
+                            entry.insert(method);
+                        }
+                    }
+                }
+
+            }
+
+            Ok(Some(ResourceClass { declaration, data, interface, links, methods }))
+        }
+        else { Ok(None) }
+    }
+}
+
+
 
 
 //
 // Identifiers
 //
 
+#[derive(PartialEq, Eq, Debug)]
 pub struct RCIdentifier { 
     base: String, 
     generics: Vec<RCIdentifier>, 
@@ -72,35 +165,6 @@ impl Expectable for RCIdentifier {
     }
 }
 
-enum RCPart { 
-    Data(Type), 
-    Interface(InterfaceExpression), 
-    LinksBlock(LinksBlock), 
-    Method(Method), 
-}
-impl Expectable for RCPart { 
-    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
-        
-        let first = stream.next()?; 
-        match first.as_keyword() { 
-            Some(Keyword::Data) => Ok(Self::Data(Type::parse_expect(stream)?)),
-            Some(Keyword::Interface) => Ok(Self::Interface(InterfaceExpression::parse_expect(stream)?)),
-            Some(Keyword::Links) => Ok(Self::LinksBlock(LinksBlock::parse_expect(stream)?)),
-            _ => { 
-
-                if let Some(method) = Method::parse_peek(stream)? { 
-                    Ok(Self::Method(method))
-                } else { 
-                    Err(first.as_err_unexpected())
-                }
-
-            }
-        }
-
-    }
-}
-
-
 //
 // ========
 // Contents
@@ -111,8 +175,8 @@ impl Expectable for RCPart {
 // Links
 //
 
-type LinksBlock = Vec<Link>;
-struct Link { 
+pub type LinksBlock = Vec<Link>;
+pub struct Link { 
     pub rel: String, 
     pub optional: bool, 
     pub typ: RCIdentifier,
@@ -164,7 +228,7 @@ impl Expectable for LinksBlock {
 // Methods
 // 
 
-#[derive(EnumString, Debug, Display, PartialEq, Eq)]
+#[derive(EnumString, Debug, Display, PartialEq, Eq, Hash, Clone, Copy)]
 #[strum(serialize_all="UPPERCASE")]
 pub enum MethodName { 
     Get, 
@@ -175,75 +239,83 @@ pub enum MethodName {
 }
 
 
-struct Method { 
+#[derive(Debug, PartialEq)]
+pub struct Method { 
+    /// The name (HTTP verb) of the method.
+    /// 
+    /// This is extraneous when accessed outside the parser,
+    /// as its current representation in the `ResourceClass` lies within a map from its name.
+    /// That's kinda stupid, but it seems convenient for the time being.  We'll see
     pub name : MethodName, 
+
     pub input : Option<MethodInput>, 
     pub outputs : Vec<MethodOutput>, 
 }
-struct MethodInput { 
+#[derive(Debug, PartialEq)]
+pub struct MethodInput { 
     typ: RCType, 
     lax: bool, 
 }
-struct MethodOutput { 
+#[derive(Debug, PartialEq)]
+pub struct MethodOutput { 
     typ: Option<RCType>, 
     status: Option<Number>
     //TAG: REASON_PHRASES
     // https://veneto.notion.site/HTTP-reason-phrases-instead-of-codes-772c7fc3d21146aa922573913c8adc35
 }
 
-impl Peekable for Method { 
-    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
-        if let Some(name) = stream.peek_for_identifier()?.and_then(|s| MethodName::from_str(&s).ok()) { 
+impl Expectable for Method { 
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
+        let name = stream.next()?;
+        let name = MethodName::from_str(&name.try_as_identifier()?)
+            .map_err(|_| name.as_err(ParseErrorKind::UnknownMethodName))?; 
+            
 
-            // First, try to grab the input 
+        // First, try to grab the input 
 
-            let mut input : Option<MethodInput> = None; 
-            let peek = stream.peek()?; 
-            if stream.peek()?.is_identifier() { 
-                let typ = RCType::parse_expect(stream)?; 
-                input = Some(MethodInput { 
-                    typ, 
-                    lax: stream.peek_for_puncutation(Punctuation::Lax)?,
-                });
+        let mut input : Option<MethodInput> = None;
+        
 
-                // Can't use `parse_peek` here unfortunately because of this - 
-                // we may need the original token to raise this error
-                // (This goes away if we move semantic error checking out of the parser, like it probably should be)
-                // Namely for https://veneto.notion.site/Recoverable-Errors-92e75e448ded4492a938b7d1c24711de
-                if name == MethodName::Get { 
-                    return Err(peek.as_semantic_error("GET requests cannot have a request body"))
-                }
+        let err_ref = stream.peek()?; 
+        if let Some(typ) = RCType::parse_peek(stream)? { 
+            if name == MethodName::Get { 
+                return Err(err_ref.as_semantic_error("GET requests cannot have a request body"))
             }
 
-            // Now let's handle outputs
-
-            let mut outputs = Vec::<MethodOutput>::new(); 
-            if stream.peek_for_puncutation(Punctuation::Arrow)? { 
-                loop { 
-
-                    let mut status : Option<Number> = None; 
-                    if stream.peek_for_puncutation(Punctuation::HttpStatus)? { 
-                        status = Some(stream.next()?.try_as_number()?);
-                    }
-
-                    let typ = RCType::parse_peek(stream)?; 
-
-                    if typ.is_none() && status.is_none() { 
-                        // It kind of feels like cheating to just peek the next token for the error location here,
-                        // but it works I guess 
-                        return Err(stream.peek()?.as_semantic_error("Method outputs must have a status and/or a type"))
-                    }
-                    outputs.push(MethodOutput { typ, status });
-
-
-                    if stream.peek_for_puncutation(Punctuation::Comma)? { continue }
-                    else { break } 
-                }
-            }
-
-            Ok(Some(Self { name, input, outputs }))
+            input = Some(MethodInput { 
+                typ, 
+                lax: stream.peek_for_puncutation(Punctuation::Lax)?,
+            });
         }
-        else { Ok(None) }
+
+        // Now let's handle outputs
+
+        let mut outputs = Vec::<MethodOutput>::new(); 
+        if stream.peek_for_puncutation(Punctuation::Arrow)? { 
+            loop { 
+
+                let mut status : Option<Number> = None; 
+                if stream.peek_for_puncutation(Punctuation::HttpStatus)? { 
+                    status = Some(stream.next()?.try_as_number()?);
+                }
+
+                let typ = RCType::parse_peek(stream)?; 
+
+                if typ.is_none() && status.is_none() { 
+                    // It kind of feels like cheating to just peek the next token for the error location here,
+                    // but it works I guess 
+                    return Err(stream.peek()?.as_semantic_error("Method outputs must have a status and/or a type"))
+                }
+                outputs.push(MethodOutput { typ, status });
+
+
+                if stream.peek_for_puncutation(Punctuation::Comma)? { continue }
+                else { break } 
+            }
+        }
+
+        Ok(Self { name, input, outputs })
+        
     }
 }
 
@@ -265,9 +337,12 @@ pub enum SpecialType {
 
 /// This represents a type expression within the context of a resource class;
 /// it contains a normal type or an `RCSpecialType`
+#[derive(Debug, PartialEq)]
 pub enum RCType { 
     Normal(Type),
     Special(SpecialType), 
+    //TAG: RC_FLAGS
+    // When we add RC flags, `Normal` may have to be changed
 }
 
 impl Expectable for RCType { 
@@ -292,4 +367,52 @@ impl Peekable for RCType {
             Ok(None) 
         }
     }
+}
+
+
+#[cfg(test)]
+mod test {
+    use crate::parse::ast::types::{ TypeKind };
+    use crate::parse::ast::types::test::make_simple_type;
+    use crate::parse::ast::{ general::GenericIdentifier };
+    use crate::parse::lexer_tests::token_stream;
+    use crate::parse::{ParseResult, TestUnwrap};
+    use crate::parse::ast::{Expectable};
+
+    use super::{Method, RCType, MethodOutput, MethodInput};
+
+    fn make_simple_rc_type(kind: TypeKind) -> RCType { 
+        RCType::Normal(make_simple_type(kind))
+    }
+    fn make_ident_type(name: &str) -> RCType { 
+        RCType::Normal(make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple(name.to_string()))))
+    }
+ 
+
+    fn parse_method(input: &str) -> ParseResult<Method> { 
+        let mut stream = token_stream(input); 
+        Method::parse_expect(&mut stream)
+    }
+    fn assert_method(input: &str, expected: Method) { 
+        assert_eq!( parse_method(input).test_unwrap(), expected );
+    }
+
+    #[test]
+    fn simple_method() { 
+        assert_method("POST foo -> #200 bar", Method { 
+            name: super::MethodName::Post, 
+            input: Some(MethodInput { 
+                typ: make_ident_type("foo"), 
+                lax: false, 
+            }), 
+            outputs: vec![ 
+                MethodOutput { 
+                    typ: Some(make_ident_type("bar")), 
+                    status: Some("200".to_string()), 
+                }
+            ]
+        })
+    }
+
+
 }
