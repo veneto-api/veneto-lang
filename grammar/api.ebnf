@@ -54,6 +54,7 @@ rc_type = rc_reference | type;
     -- ----
 *)
 rc_body = [{ rc_data | rc_interface | rc_links | rc_method }] ;
+(* SEMANTICS: Only one of each.  It's just like this so it can be in any order *)
 
 (* Special grammar *)
 rc_reference =  '@empty' | '@media' | '@self' | rc_ident ;
@@ -70,13 +71,15 @@ links_block = [{ link ^+ ',' }] ;
 link = identifier ['?'] '->' rc_reference ;
 
 
-rc_method = method_name [method_input] { '->' method_output ^ ',' } ;
+rc_method = method_name [method_input] ['->' { method_output ^ ',' }] ';' ;
 method_name = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE' ;
 method_input = rc_type ['%'];
 method_status = '#' Number;
 method_output = [method_status] [rc_type] ;
-(* Semantically, this must have at least one 👆 *)
-(* Taking the easy way out grammatically again  *)
+(* SEMANTICS: 👆 At least one of these two must be present 
+    Otherwise, this could technically be empty.  Like, this would be technically valid.  Lol.
+    GET -> ,,,,,,,,,; 
+ *)
 
 
 (* Entry Points *)

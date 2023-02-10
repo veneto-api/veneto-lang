@@ -227,6 +227,9 @@ pub enum Punctuation {
     #[strum(serialize="->")]
     Arrow, 
 
+    #[strum(serialize=";")]
+    Semicolon, 
+
     // Also of note, if we ever add a slash `/` operator for any reason,
     // we should update the tests to make sure that comment handling works properly
     // (that a single slash doesn't start a comment, etc)

@@ -256,6 +256,13 @@ pub struct MethodInput {
     typ: RCType, 
     lax: bool, 
 }
+
+/// This represents the output specification of a method - its response type and status.
+/// 
+/// Both of those things are optional, and their defaults will be specified in documentation.
+/// However, the parser currently does not allow them both to be empty.  
+/// This might get converted to a sum type in the future if we need to guarantee that for type safety,
+/// but since they both have defaults it's staying like this for now 
 #[derive(Debug, PartialEq)]
 pub struct MethodOutput { 
     typ: Option<RCType>, 
@@ -269,52 +276,76 @@ impl Expectable for Method {
         let name = stream.next()?;
         let name = MethodName::from_str(&name.try_as_identifier()?)
             .map_err(|_| name.as_err(ParseErrorKind::UnknownMethodName))?; 
-            
 
-        // First, try to grab the input 
 
+        // First, check for input type
+        // Types can't be peeked, so we have to use other context to determine whether or not to expect one 
+        // If there's not an arrow yet, expect the input type, then expect an arrow or semicolon afterwards
         let mut input : Option<MethodInput> = None;
-        
+        if !stream.peek_for_puncutation(Punctuation::Arrow)? { 
 
-        let err_ref = stream.peek()?; 
-        if let Some(typ) = RCType::parse_peek(stream)? { 
-            if name == MethodName::Get { 
-                return Err(err_ref.as_semantic_error("GET requests cannot have a request body"))
+            let err_ref = stream.peek()?; 
+            let typ = RCType::parse_expect(stream)?;
+
+            if [ MethodName::Get, MethodName::Delete ].contains(&name) { 
+                return Err(err_ref.as_semantic_error("This request type cannot have a request body"))
             }
 
             input = Some(MethodInput { 
                 typ, 
                 lax: stream.peek_for_puncutation(Punctuation::Lax)?,
             });
-        }
 
-        // Now let's handle outputs
-
-        let mut outputs = Vec::<MethodOutput>::new(); 
-        if stream.peek_for_puncutation(Punctuation::Arrow)? { 
-            loop { 
-
-                let mut status : Option<Number> = None; 
-                if stream.peek_for_puncutation(Punctuation::HttpStatus)? { 
-                    status = Some(stream.next()?.try_as_number()?);
-                }
-
-                let typ = RCType::parse_peek(stream)?; 
-
-                if typ.is_none() && status.is_none() { 
-                    // It kind of feels like cheating to just peek the next token for the error location here,
-                    // but it works I guess 
-                    return Err(stream.peek()?.as_semantic_error("Method outputs must have a status and/or a type"))
-                }
-                outputs.push(MethodOutput { typ, status });
-
-
-                if stream.peek_for_puncutation(Punctuation::Comma)? { continue }
-                else { break } 
+            let next = stream.next()?;
+            match next.as_punctuation() { 
+                Some(Punctuation::Arrow) => (), // If it's an arrow, continue on below 
+                Some(Punctuation::Semicolon) => { 
+                    // If it's a semicolon, we're done here
+                    return Ok(Method { name, input, outputs: vec![] })
+                },
+                _ => return Err(next.as_err_unexpected())
             }
         }
 
-        Ok(Self { name, input, outputs })
+
+        // Now let's handle outputs 
+        // We expect them to be here because it's guaranteed above 
+        // A sanity check here would be nice but we don't currently have the means to do that really 
+        let mut outputs = Vec::<MethodOutput>::new(); 
+
+        loop { 
+            // First check for a status.  
+            // This is easy since we can just peek for it 
+            let mut status : Option<Number> = None; 
+            if stream.peek_for_puncutation(Punctuation::HttpStatus)? { 
+                status = Some(stream.next()?.try_as_number()?);
+            }
+
+            // Now we have to handle types again, which can't be peeked.  Same deal
+            let mut typ : Option<RCType> = None; 
+            let peek = stream.peek()?; 
+            if !(
+                peek.as_punctuation() == Some(Punctuation::Comma) || 
+                peek.as_punctuation() == Some(Punctuation::Semicolon)
+            ) { 
+                // If there's not an end-of-clause marker (comma or semicolon), expect the type 
+                typ = Some(RCType::parse_expect(stream)?); 
+            }
+            else if status.is_none() { 
+                // Otherwise, there is no type.
+                // However, we have to raise this semantic error if there's no status either
+                return Err(peek.as_semantic_error("Method outputs must have a status and/or a type"))
+            }
+
+            outputs.push(MethodOutput { typ, status });
+
+            let next = stream.next()?; 
+            match next.as_punctuation() { 
+                Some(Punctuation::Comma) => continue,
+                Some(Punctuation::Semicolon) => return Ok(Method { name, input, outputs }),
+                _ => return Err(next.as_err_unexpected())
+            }
+        }
         
     }
 }
@@ -335,8 +366,20 @@ pub enum SpecialType {
     Empty, 
 }
 
+impl Expectable for SpecialType { 
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
+        let next = stream.next()?;
+        SpecialType::from_str(&next.try_as_identifier()?).map_err(|_| next.as_err(ParseErrorKind::UnknownSpecialType))
+    }
+}
+
 /// This represents a type expression within the context of a resource class;
-/// it contains a normal type or an `RCSpecialType`
+/// it contains a normal type or an `RCSpecialType`.
+/// 
+/// This is not `Peekable` because `Type` is not `Peekable`!
+/// That's mainly because there's lots of different token types that can mark the beginning of a `Type` - 
+/// it could, in theory, be possible to implement `Peekable for Type` but that introduces a lot of room for error.
+/// It's better to just work our way around that as long as it's feasible to do so
 #[derive(Debug, PartialEq)]
 pub enum RCType { 
     Normal(Type),
@@ -348,23 +391,10 @@ pub enum RCType {
 impl Expectable for RCType { 
     fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
         if stream.peek_for_puncutation(Punctuation::SpecialType)? { 
-            let next = stream.next()?;
-            match SpecialType::from_str(&next.try_as_identifier()?) { 
-                Ok(typ) => Ok(RCType::Special(typ)),
-                Err(_) => Err(next.as_err(ParseErrorKind::UnknownSpecialType))
-            }
+            SpecialType::parse_expect(stream).map(RCType::Special)
         } 
         else { 
             Type::parse_expect(stream).map(RCType::Normal)
-        }
-    }
-}
-impl Peekable for RCType { 
-    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
-        if stream.peek()?.is_identifier() { 
-            Ok(Some(Self::parse_expect(stream)?))
-        } else { 
-            Ok(None) 
         }
     }
 }
@@ -376,10 +406,10 @@ mod test {
     use crate::parse::ast::types::test::make_simple_type;
     use crate::parse::ast::{ general::GenericIdentifier };
     use crate::parse::lexer_tests::token_stream;
-    use crate::parse::{ParseResult, TestUnwrap};
+    use crate::parse::{ParseResult, TestUnwrap, ParseErrorKind};
     use crate::parse::ast::{Expectable};
 
-    use super::{Method, RCType, MethodOutput, MethodInput};
+    use super::{Method, RCType, MethodOutput, MethodInput, MethodName, SpecialType};
 
     fn make_simple_rc_type(kind: TypeKind) -> RCType { 
         RCType::Normal(make_simple_type(kind))
@@ -397,9 +427,13 @@ mod test {
         assert_eq!( parse_method(input).test_unwrap(), expected );
     }
 
+    //
+    // Methods
+    //
+
     #[test]
-    fn simple_method() { 
-        assert_method("POST foo -> #200 bar", Method { 
+    fn method_complete() { 
+        assert_method("POST foo -> #200 bar;", Method { 
             name: super::MethodName::Post, 
             input: Some(MethodInput { 
                 typ: make_ident_type("foo"), 
@@ -414,5 +448,61 @@ mod test {
         })
     }
 
+    #[test]
+    fn method_empty_bodies() { 
+        assert_method("POST -> @empty;", Method { 
+            name: MethodName::Post,
+            input: None, 
+            outputs: vec![ 
+                MethodOutput { 
+                    typ: Some(RCType::Special(SpecialType::Empty)),
+                    status: None, 
+                }
+            ]
+        })
+    }
+
+    #[test]
+    fn implied_response() { 
+        assert_method("PATCH foo -> bar;", Method { 
+            name: MethodName::Patch, 
+            input: Some(MethodInput { 
+                typ: make_ident_type("foo"), 
+                lax: false, 
+            }), 
+            outputs: vec![ 
+                MethodOutput { 
+                    typ: Some(make_ident_type("bar")), 
+                    status: None, 
+                }
+            ]
+        });
+
+        assert_method("POST foo -> #204;", Method { 
+            name: MethodName::Post, 
+            input: Some(MethodInput { 
+                typ: make_ident_type("foo"), 
+                lax: false, 
+            }), 
+            outputs: vec![ 
+                MethodOutput { 
+                    typ: None, 
+                    status: Some("204".to_string()), 
+                }
+            ]
+        });
+    }
+
+    #[test]
+    fn err_empty_response() { 
+        let err = parse_method("POST foo ->");
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn err_get_body() { 
+        let err = parse_method("GET foo -> #200;").unwrap_err();
+        assert!(matches!(err.kind, ParseErrorKind::Semantic(_)));
+    }
 
 }
