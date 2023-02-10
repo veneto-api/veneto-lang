@@ -1,5 +1,7 @@
 use crate::parse::{lexer::TokenStream, ParseResult, tokens::{Punctuation, TokenKind, Terminal, Keyword}, ClauseResult, ClauseDelim};
 
+use super::Expectable;
+
 #[derive(PartialEq, Debug)]
 pub enum UseTreeKind { 
     /// A single use, e.g. `use foo::bar`
@@ -12,6 +14,9 @@ pub enum UseTreeKind {
     Glob, 
 }
 
+/// A "use tree" - the part that comes right after the `use` keyword.
+/// 
+/// This is heavily inspired by `rustc_ast::ast::UseTree` 
 #[derive(PartialEq, Debug)]
 pub struct UseTree { 
     path: Vec<String>, 
@@ -110,9 +115,10 @@ impl UseTree {
         }
     }
 
-    /// Parses a `UseTree` with the provided stream;
-    /// assuming that the stream is pointing right after the `use` declaration.
-    pub fn expect(stream: &mut TokenStream) -> ParseResult<Self> { 
+}
+
+impl Expectable for UseTree { 
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> { 
         let (clause, _) = Self::parse_inner(stream)?;
         Ok(clause)
     }
@@ -121,6 +127,7 @@ impl UseTree {
 
 #[cfg(test)]
 mod test {
+    use crate::parse::ast::Expectable;
     use crate::parse::tokens::{Keyword};
     use crate::parse::{ParseResult};
     use crate::parse::ast::use_tree::UseTreeKind;
@@ -132,7 +139,7 @@ mod test {
     fn parse_use(str: &str) -> ParseResult<(TokenStream, UseTree)> { 
         let mut stream = token_stream(str); 
         assert_keyword(&mut stream, Keyword::Use);
-        UseTree::expect(&mut stream).map(|tree| (stream, tree))
+        UseTree::parse_expect(&mut stream).map(|tree| (stream, tree))
     }
 
     #[test]

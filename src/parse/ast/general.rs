@@ -2,6 +2,8 @@ use crate::parse::{ClauseResult, ClauseDelim, ParseResult};
 use crate::parse::{lexer::TokenStream};
 use crate::parse::tokens::{Punctuation};
 
+use super::{Peekable, Expectable};
+
 /// This is an identifier that can accept generic parameters.
 #[derive(PartialEq, Eq, Debug)]
 pub enum GenericIdentifier { 
@@ -61,9 +63,8 @@ impl GenericIdentifier {
         }
     }
 
-
     /// Parses a potentially-generic identifier, starting with the provided `base` identifier. 
-    pub fn finish(stream: &mut TokenStream, ident: String) -> ParseResult<Self> { 
+    fn finish(stream: &mut TokenStream, ident: String) -> ParseResult<Self> { 
         let peek = stream.peek()?;
         if Some(Punctuation::GenericOpen) == peek.as_punctuation() { 
             stream.next()?; 
@@ -76,17 +77,31 @@ impl GenericIdentifier {
     }
 }
 
+impl Peekable for GenericIdentifier {
+    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
+        match stream.peek_for_identifier()? { 
+            Some(ident) => Self::finish(stream, ident).map(Some),
+            None => Ok(None)
+        }
+    }
+}
+impl Expectable for GenericIdentifier { 
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
+        let ident = stream.next()?.try_as_identifier()?;
+        Self::finish(stream, ident)
+    }
+}
+
 
 #[cfg(test)]
 mod test {
-    use crate::parse::{lexer_tests::{token_stream, assert_punctuation}, ParseResult, lexer::TokenStream, tokens::Punctuation, ParseErrorKind};
+    use crate::parse::{lexer_tests::{token_stream, assert_punctuation}, ParseResult, lexer::TokenStream, tokens::Punctuation, ParseErrorKind, ast::Expectable};
 
     use super::GenericIdentifier;
 
     fn parse_gid(input: &str) -> ParseResult<(TokenStream, GenericIdentifier)>{ 
         let mut stream = token_stream(input); 
-        let base = stream.next().unwrap().try_as_identifier().unwrap(); 
-        GenericIdentifier::finish(&mut stream, base).map(
+        GenericIdentifier::parse_expect(&mut stream).map(
             |res| (stream, res) 
         )
     }

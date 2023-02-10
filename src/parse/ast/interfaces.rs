@@ -2,7 +2,9 @@ use std::str::FromStr;
 
 use strum_macros::{ Display, EnumString };
 
-use crate::parse::{lexer::TokenStream, ParseResult, tokens::Punctuation, ParseErrorKind}; 
+use crate::parse::{lexer::TokenStream, ParseResult, tokens::Punctuation, ParseErrorKind};
+
+use super::{Peekable, Expectable}; 
 
 #[derive(Display, Debug, EnumString, PartialEq, Eq)]
 #[strum(serialize_all="lowercase")]
@@ -22,6 +24,7 @@ pub struct InterfaceField {
     optional: bool, 
 }
 
+/// The body of an Interface literal
 type Interface = Vec<InterfaceField>; 
 
 pub fn finish_interface(stream: &mut TokenStream) -> ParseResult<Interface> { 
@@ -57,6 +60,23 @@ pub fn finish_interface(stream: &mut TokenStream) -> ParseResult<Interface> {
             Some(Punctuation::BraceClose) => return Ok(fields), 
             _ => return Err(next.as_err_unexpected())
 ,        }
+    }
+}
+
+impl Peekable for Interface { 
+    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
+        if stream.peek_for_puncutation(Punctuation::BraceOpen)? { 
+            Ok(Some(finish_interface(stream)?))
+        }
+        else { 
+            Ok(None)
+        }
+    }
+}
+impl Expectable for Interface { 
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
+        stream.next()?.expect_punctuation(Punctuation::BraceOpen)?; 
+        finish_interface(stream)
     }
 }
 

@@ -2,6 +2,7 @@ use crate::parse::{ClauseResult, ClauseDelim, ParseErrorKind};
 use crate::parse::{lexer::TokenStream, ParseResult};
 use crate::parse::tokens::{Punctuation, TokenKind, Keyword, Terminal};
 
+use super::Expectable;
 use super::general::GenericIdentifier;
 
 use strum_macros::Display;
@@ -22,7 +23,9 @@ pub enum TypeKind {
 }
 
 /// This is a separate enum of all of the non-array `TypeKind`s. 
+/// 
 /// Since array brackets are postfix, we have to process all of this first before determining if it's an array
+/// This might not be necessary but I did it for now, it felt right to have explicit type checking here 
 enum InnerTypeKind { 
     Identifier(GenericIdentifier),
 
@@ -96,28 +99,24 @@ impl Type {
     }
 
     fn begin_kind(stream: &mut TokenStream) -> ParseResult<InnerTypeKind> { 
-        let first = stream.next()?; 
-
-        // First check for the easy ones - a brace or bracket indicates a struct or tuple, respectively
-        match first.as_punctuation() {
-            Some(Punctuation::BraceOpen) => return finish_struct_body(stream).map(InnerTypeKind::Struct),
-            Some(Punctuation::BracketOpen) => return finish_tuple(stream).map(InnerTypeKind::Tuple),
-            _ => {}, 
-        }
-
-        // Now we have to deal with identifiers, which could be a `GenericIdentifier` itself or an array of them 
-        // We avoid expecting an identifier explicitly so that the correct error is presented downstream
-        // We have to check for arrays downstream since the array brackets are postfix, which is why we use `InnerTypeKind` here
-        if let Some(ident) = first.as_identifier() { 
-            let ident = GenericIdentifier::finish(stream, ident)?;
-            Ok(InnerTypeKind::Identifier(ident))
+        // First check for the two easy ones
+        if stream.peek_for_puncutation(Punctuation::BraceOpen)? { 
+            // An open brace means it's a struct
+            finish_struct_body(stream).map(InnerTypeKind::Struct)
+        } 
+        else if stream.peek_for_puncutation(Punctuation::BracketOpen)? { 
+            // An open bracket means it's a tuple
+            finish_tuple(stream).map(InnerTypeKind::Tuple)
         }
         else { 
-            Err(first.as_err_unexpected())
+            // Otherwise, it must be an identifier. 
+            GenericIdentifier::parse_expect(stream).map(InnerTypeKind::Identifier)
         }
     }
+}
 
-    pub fn begin(stream: &mut TokenStream) -> ParseResult<Self> { 
+impl Expectable for Type { 
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> { 
         let mut typ = Self::from_inner_kind(Self::begin_kind(stream)?);
 
 
@@ -192,7 +191,7 @@ impl StructField {
         match first.kind { 
             TokenKind::Word(name) => { 
                 stream.next()?.expect_punctuation(Punctuation::Colon)?;
-                let typ = Type::begin(stream)?;
+                let typ = Type::parse_expect(stream)?;
                 let res = Some(Self{ name, typ });
         
                 let peek = stream.peek()?; 
@@ -248,7 +247,7 @@ fn finish_tuple(stream: &mut TokenStream) -> ParseResult<Vec<Type>> {
             return Ok(types)
         }
 
-        let typ = Type::begin(stream)?; 
+        let typ = Type::parse_expect(stream)?; 
         types.push(typ); 
 
         let next = stream.next()?; 
@@ -265,6 +264,7 @@ fn finish_tuple(stream: &mut TokenStream) -> ParseResult<Vec<Type>> {
 #[cfg(test)]
 mod test {
     use crate::parse::TestUnwrap; 
+    use crate::parse::ast::Expectable;
     use crate::parse::{ParseResult, lexer::TokenStream, lexer_tests::{token_stream, assert_punctuation}, ParseErrorKind};
     use super::GenericIdentifier; 
     use crate::parse::tokens::{ Terminal, Keyword, Punctuation }; 
@@ -275,7 +275,7 @@ mod test {
 
     fn parse_type(input: &str) -> ParseResult<(TokenStream, Type)> { 
         let mut stream = token_stream(input); 
-        let typ = Type::begin(&mut stream);
+        let typ = Type::parse_expect(&mut stream);
         typ.map(|x| (stream, x))
     }
     fn assert_type(input: &str, expected: Type) { 

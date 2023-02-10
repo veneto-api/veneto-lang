@@ -1,3 +1,5 @@
+use super::{lexer::TokenStream, ParseResult};
+
 /// This is parses common miscellaneous expressions.
 /// At the time, that's only generic identifiers, so maybe this module should be renamed.
 /// 
@@ -17,3 +19,24 @@ pub mod types;
 
 /// This parses interface expressions.
 pub mod interfaces;
+
+
+//
+// Parsing interface
+//
+
+pub trait Expectable where Self: std::marker::Sized { 
+    /// Tries to extract the implementing AST node from the `stream`,
+    /// returning an Unexpected error if it cannot.  
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self>;
+}
+
+/// A `Peekable` is an AST node with an unambiguous initial token.
+/// That lets us implement `parse_peek`, which can gracefully backtrack
+/// if the stream cannot derive the implementing AST node from its current position.
+pub trait Peekable where Self: std::marker::Sized { 
+    /// Tries to extract the implementing AST node from the `stream`,
+    /// first by having a peek at the first token.
+    /// If the first token doesn't match, return `None` 
+    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>>;
+}

@@ -414,4 +414,30 @@ impl<'a> TokenStream<'a> {
         }
     }
 
+    /// Peek the next token from the stream.
+    /// If it's a valid identifier, advance the cursor and return it.
+    /// Otherwise, return `None`.  
+    pub fn peek_for_identifier(&mut self) -> ParseResult<Option<String>> { 
+        match self.peek()?.as_identifier() { 
+            Some(ident) => { 
+                self.next()?;
+                Ok(Some(ident))
+            },
+            None => Ok(None)
+        }
+    }
+
+    /// Peek the next token from the stream.
+    /// If it matches the provided punctuation, advance the cursor and return `true`
+    /// Otherwise, return `false`.  
+    pub fn peek_for_puncutation(&mut self, expected: Punctuation) -> ParseResult<bool> { 
+        match self.peek()?.as_punctuation() { 
+            Some(x) if x == expected => { 
+                self.next()?;
+                Ok(true)
+            },
+            _ => Ok(false)
+        }
+    }
+
 }
