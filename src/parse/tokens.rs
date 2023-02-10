@@ -3,7 +3,8 @@ use strum_macros::EnumString;
 
 use super::{ParseResult, ParseError, ParseErrorKind};
 
-
+// lol dunno if we have to convert these yet 
+pub type Number = String; 
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -16,7 +17,7 @@ pub enum TokenKind {
     /// Use helpers like `as_identifier` and `as_keyword` instead
     Word(String), 
 
-    Number(String), 
+    Number(Number), 
     Punctuation(Punctuation), 
     StringLiteral(String), 
     EOF, 
@@ -99,6 +100,13 @@ impl Token {
             TokenKind::Word(str) => Keyword::from_str(&str).ok().map(Terminal::Keyword), 
             _ => None
         }
+    }
+
+    /// Returns `true` if this is a valid identifier.
+    /// 
+    /// This is preferred to checking the `TokenKind` as the rules may change
+    pub fn is_identifier(&self) -> bool { 
+        matches!(self.kind, TokenKind::Word(_))
     }
 
     /// Returns the token's value if this token is a valid identifier, otherwise `None`
@@ -216,6 +224,9 @@ pub enum Punctuation {
     #[strum(serialize="+")]
     StructExtension,
 
+    #[strum(serialize="->")]
+    Arrow, 
+
     // Also of note, if we ever add a slash `/` operator for any reason,
     // we should update the tests to make sure that comment handling works properly
     // (that a single slash doesn't start a comment, etc)
@@ -225,20 +236,23 @@ pub enum Punctuation {
 #[strum(serialize_all="lowercase")]
 pub enum Keyword { 
 
+    // Top-level 
     Type, 
-
     Use, 
-
     Interface,
-
     Resource,
 
     #[strum(serialize="as")]
     PathAlias, 
 
+    // Struct mods
     In, 
     Out, 
 
+    // in resource classes
+    Data,
+    Links, 
+    // (interface already defined) 
 }
 
 impl Keyword { 

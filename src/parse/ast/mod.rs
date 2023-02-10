@@ -20,6 +20,9 @@ pub mod types;
 /// This parses interface expressions.
 pub mod interfaces;
 
+/// This parses the body of a Resource Class.
+pub mod rc; 
+
 
 //
 // Parsing interface

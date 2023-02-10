@@ -25,9 +25,23 @@ pub struct InterfaceField {
 }
 
 /// The body of an Interface literal
-type Interface = Vec<InterfaceField>; 
+pub type InterfaceBody = Vec<InterfaceField>; 
 
-pub fn finish_interface(stream: &mut TokenStream) -> ParseResult<Interface> { 
+pub enum InterfaceExpression { 
+    Identifier(String), 
+    Literal(InterfaceBody), 
+}
+impl Expectable for InterfaceExpression { 
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
+        if let Some(lit) = InterfaceBody::parse_peek(stream)? { 
+            Ok(InterfaceExpression::Literal(lit))
+        } else { 
+            stream.next()?.try_as_identifier().map(InterfaceExpression::Identifier)
+        }
+    }
+}
+
+pub fn finish_interface(stream: &mut TokenStream) -> ParseResult<InterfaceBody> { 
     let mut fields = Vec::<InterfaceField>::new(); 
 
     loop { 
@@ -63,7 +77,7 @@ pub fn finish_interface(stream: &mut TokenStream) -> ParseResult<Interface> {
     }
 }
 
-impl Peekable for Interface { 
+impl Peekable for InterfaceBody { 
     fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
         if stream.peek_for_puncutation(Punctuation::BraceOpen)? { 
             Ok(Some(finish_interface(stream)?))
@@ -73,7 +87,7 @@ impl Peekable for Interface {
         }
     }
 }
-impl Expectable for Interface { 
+impl Expectable for InterfaceBody { 
     fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
         stream.next()?.expect_punctuation(Punctuation::BraceOpen)?; 
         finish_interface(stream)
@@ -86,15 +100,15 @@ mod test {
     use crate::parse::{ParseResult, lexer::TokenStream, tokens::Punctuation};
     use crate::parse::TestUnwrap; 
 
-    use super::{Interface, finish_interface, InterfaceField, InterfaceValueType};
+    use super::{InterfaceBody, finish_interface, InterfaceField, InterfaceValueType};
 
-    fn parse_interface(input: &str) -> ParseResult<Interface> { 
+    fn parse_interface(input: &str) -> ParseResult<InterfaceBody> { 
         let mut stream = TokenStream::new(input.chars()); 
         stream.next()?.expect_punctuation(Punctuation::BraceOpen)?;
         finish_interface(&mut stream)
     }
 
-    fn assert_interface(input: &str, expected: Interface) { 
+    fn assert_interface(input: &str, expected: InterfaceBody) { 
         let i = parse_interface(input).test_unwrap(); 
         assert_eq!(i, expected);
     }

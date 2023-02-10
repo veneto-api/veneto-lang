@@ -20,21 +20,33 @@ resource_class = rc_declaration '{' rc_body '}' ;
 (* 
     RCs can have generic params (general.ebnf) or flags. 
 *)
-rc_expression   = identifier rc_params           ;
-rc_params       = [generic_params] [rc_flags]    ;
+rc_ident        = identifier rc_params           ;
+rc_params       = [generic_params | rc_flags]    ;
 rc_flags        = never; 
 (* rc_flags =     '(' {identifier ^+ ',' } ')'   ;       *)
+(* 👆 that's coming later! *)
 
 (* Title line *)
 (*  
     `rc_ident`:
         Must have an identifier.
         If it is not an extension, it may have generics and flags.  
-        If it is an extension, it may not have generics and flags, but the extended RC may. 
-*)
-rc_declaration  = 'resource' identifier rc_modification ;
-rc_modification = 'extends' identifier rc_params | rc_params; 
+        If it is an extension, it may not have generics nor flags, but the extended RC may. 
 
+    So we could use something like this grammar
+        rc_declaration  = 'resource' identifier rc_modification ;
+        rc_modification = 'extends' rc_ident | rc_params; 
+    to prevent it grammatically,
+    but instead I'll opt to take the lazy route and just have it be a semantic error instead 
+*)
+rc_declaration = 'resource' rc_ident; 
+
+(* 
+    This is a type used in an RC; 
+    it can be a reference to another RC or a normal data type 
+*)
+
+rc_type = rc_reference | type; 
 
 (* 
     -- ----
@@ -44,8 +56,8 @@ rc_modification = 'extends' identifier rc_params | rc_params;
 rc_body = [{ rc_data | rc_interface | rc_links | rc_method }] ;
 
 (* Special grammar *)
-rc_reference =  '@empty' | '@media' | '@self' | identifier ;
-rc_data = rc_reference | type ; 
+rc_reference =  '@empty' | '@media' | '@self' | rc_ident ;
+rc_data = rc_type ; 
 
 
 
@@ -55,14 +67,16 @@ rc_interface = 'interface' (identifier | interface_block) ;
 
 rc_links = 'links' '{' links_block '}' ;
 links_block = [{ link ^+ ',' }] ; 
-link = identifier '->' ['?'] rc_reference ;
+link = identifier ['?'] '->' rc_reference ;
 
 
-rc_method = method_name [method_input] { '->' method_response ^ ',' } ;
+rc_method = method_name [method_input] { '->' method_output ^ ',' } ;
 method_name = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE' ;
-method_input = type ['%'];
+method_input = rc_type ['%'];
 method_status = '#' Number;
-method_response = method_status [rc_data] | rc_data ;
+method_output = [method_status] [rc_type] ;
+(* Semantically, this must have at least one 👆 *)
+(* Taking the easy way out grammatically again  *)
 
 
 (* Entry Points *)

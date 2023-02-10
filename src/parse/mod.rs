@@ -49,6 +49,8 @@ pub enum ParseErrorKind {
     /// Interfaces only support a limited range of types, 
     /// since their representation is limited to the URI syntax 
     UnknownInterfaceValueType, 
+
+    UnknownSpecialType, 
 }
 
 #[derive(Debug)]
