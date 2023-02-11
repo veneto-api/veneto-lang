@@ -28,6 +28,7 @@ pub struct InterfaceField {
 pub type InterfaceBody = Vec<InterfaceField>; 
 
 /// Either an interface literal or an identifier referencing another interface
+#[derive(Debug, PartialEq, Eq)]
 pub enum InterfaceExpression { 
     Identifier(String), 
     Literal(InterfaceBody), 

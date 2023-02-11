@@ -16,6 +16,7 @@ use super::{Expectable, types::Type, interfaces::InterfaceExpression, Peekable};
 /// currently we have the limitation that flags cannot be defined for extended Resource Classes
 /// 
 /// TAG: RC_FLAGS
+#[derive(Debug, PartialEq, Eq)]
 pub enum RCDeclaration { 
     /// A non-extended Resource Class, which may have parameters
     Basic(RCIdentifier), 
@@ -29,6 +30,7 @@ pub enum RCDeclaration {
 
 /// The body of a resource class,
 /// beginning with an open brace
+#[derive(Debug, PartialEq)]
 pub struct ResourceClass { 
     /// The declaration for this resource class,
     /// including its parameter information
@@ -451,14 +453,15 @@ impl Expectable for RCType {
 
 #[cfg(test)]
 mod test {
+    use crate::parse::ast::interfaces::InterfaceExpression;
     use crate::parse::ast::types::{ TypeKind, StructField };
     use crate::parse::ast::types::test::make_simple_type;
     use crate::parse::ast::{ general::GenericIdentifier };
     use crate::parse::lexer_tests::token_stream;
     use crate::parse::{ParseResult, TestUnwrap, ParseErrorKind};
-    use crate::parse::ast::{Expectable};
+    use crate::parse::ast::{Expectable, Peekable};
 
-    use super::{Method, RCType, MethodInput, MethodName, SpecialType, LinksBlock, Link, RCIdentifier, MethodOutput};
+    use super::{Method, RCType, MethodInput, MethodName, SpecialType, LinksBlock, Link, RCIdentifier, ResourceClass, RCDeclaration, MethodOutput};
 
     fn parse_method(input: &str) -> ParseResult<Method> { 
         let mut stream = token_stream(input); 
@@ -662,6 +665,77 @@ mod test {
     //
     // Integration
     //
+
+    fn parse_rc(input: &str) -> ParseResult<Option<ResourceClass>> { 
+        ResourceClass::parse_peek(&mut token_stream(input))
+    }
+
+    fn assert_rc(input: &str, expected: ResourceClass) { 
+        let rc = parse_rc(input).test_unwrap().unwrap();
+        assert_eq!(rc, expected); 
+    }
+
+    #[test]
+    fn simple_rc() { 
+        assert_rc("resource Foo { 
+            data int[]
+
+            interface Queryable
+
+            links { 
+                bar -> baz, 
+            }
+
+            GET -> #200; 
+
+            PATCH @self% -> @self; 
+
+        }", ResourceClass { 
+
+            declaration: RCDeclaration::Basic(RCIdentifier { base: "Foo".to_string(), generics: vec![] }),
+
+            data: Some(make_simple_type(
+                TypeKind::Array(Box::new(
+                    make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("int".to_string())))
+                ))
+            )),
+
+            interface: Some(InterfaceExpression::Identifier("Queryable".to_string())),
+
+            links: Some(vec![ 
+                Link { 
+                    rel: "bar".to_string(),  
+                    optional: false, 
+                    typ: RCIdentifier { 
+                        base: "baz".to_string(), 
+                        generics: vec![], 
+                    }
+                }
+            ]), 
+
+            methods: vec![
+                Method { 
+                    name: MethodName::Get, 
+                    input: None, 
+                    outputs: vec![ 
+                        MethodOutput { status: Some(200.to_string()), typ: None }
+                    ]
+                },
+
+                Method { 
+                    name: MethodName::Patch, 
+                    input: Some(MethodInput { 
+                        typ: RCType::Special(SpecialType::RCSelf),
+                        lax: true, 
+                    }), 
+                    outputs: vec![ 
+                        MethodOutput { status: None, typ: Some(RCType::Special(SpecialType::RCSelf)) }
+                    ]
+                }
+            ],
+
+        })
+    }
 
 
     //TODO: Test err duplicate in RC integration, like this 
