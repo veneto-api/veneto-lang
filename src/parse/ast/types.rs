@@ -222,8 +222,16 @@ fn finish_struct_body(stream: &mut TokenStream) -> ParseResult<StructBody> {
     let mut fields = Vec::<StructField>::new(); 
 
     loop { 
+        let err_ref = stream.peek()?; 
         let (field, delim) = StructField::begin(stream)?; 
-        if let Some(field) = field { fields.push(field); }
+        if let Some(field) = field { 
+
+            if fields.iter().any(|other| other.name == field.name) { 
+                return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
+            }
+
+            fields.push(field); 
+        }
 
         match delim { 
             ClauseDelim::Continue => continue, 
@@ -445,6 +453,12 @@ pub mod test {
 
         let res = parse_type("[ foo<T> ] in + { foo: bar }");
         assert_eq!(res.unwrap_err().kind, ParseErrorKind::SemanticStructOnly(Terminal::Keyword(Keyword::In)));
+    }
+
+    #[test]
+    fn err_struct_duplicate() { 
+        let res = parse_type("{ foo: bar, bar: baz, foo: baz }");
+        assert_eq!(res.unwrap_err().kind, ParseErrorKind::SemanticDuplicate)
     }
 
     #[test]
