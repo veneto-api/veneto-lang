@@ -202,6 +202,8 @@ impl Expectable for RCIdentifier {
 //
 
 pub type LinksBlock = Vec<Link>;
+
+#[derive(PartialEq, Eq, Debug)]
 pub struct Link { 
     pub rel: String, 
     pub optional: bool, 
@@ -236,9 +238,16 @@ impl Expectable for LinksBlock {
 
         let mut links = Vec::<Link>::new(); 
         loop { 
+            let err_ref = stream.peek()?; 
             if let Some(link) = Link::parse_peek(stream)? { 
+                // Bonus check: Duplicate link refs
+                if links.iter().any(|other| other.rel == link.rel) { 
+                    return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
+                }
+
                 links.push(link); 
             }
+
 
             let next = stream.next()?; 
             match next.as_punctuation() { 
@@ -442,7 +451,7 @@ mod test {
     use crate::parse::{ParseResult, TestUnwrap, ParseErrorKind};
     use crate::parse::ast::{Expectable};
 
-    use super::{Method, RCType, MethodInput, MethodName, SpecialType};
+    use super::{Method, RCType, MethodInput, MethodName, SpecialType, LinksBlock, Link, RCIdentifier};
 
     fn parse_method(input: &str) -> ParseResult<Method> { 
         let mut stream = token_stream(input); 
@@ -571,6 +580,70 @@ mod test {
             outputs: HashMap::from([( None, Some(RCType::Special(SpecialType::Empty)))]),
         })
     }
+
+
+    //
+    // Links
+    //
+
+    fn assert_links(input: &str, expected: LinksBlock) { 
+        let res = LinksBlock::parse_expect(&mut token_stream(input)).test_unwrap(); 
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn links_simple() { 
+        assert_links("{ foo -> bar }", vec![ 
+            Link { 
+                rel: "foo".to_string(), 
+                optional: false, 
+                typ: RCIdentifier { base: "bar".to_string(), generics: vec![] }
+            }
+        ]);
+    }
+
+    #[test]
+    fn links_multiple_optional() { 
+        assert_links("{ bar -> foo, baz? -> optional }", vec![ 
+            Link { 
+                rel: "bar".to_string(),
+                optional: false, 
+                typ: RCIdentifier { base: "foo".to_string(), generics: vec![] }
+            },
+            Link { 
+                rel: "baz".to_string(), 
+                optional: true, 
+                typ: RCIdentifier { base: "optional".to_string(), generics: vec![] }
+            }
+        ]);
+    }
+
+    #[test]
+    fn links_generic() { 
+        assert_links("{baz -> foo<bar> }", vec![
+            Link { 
+                rel: "baz".to_string(), 
+                optional: false, 
+                typ: RCIdentifier { 
+                    base: "foo".to_string(), 
+                    generics: vec![ RCIdentifier { 
+                        base: "bar".to_string(), 
+                        generics: vec![] 
+                    } ] 
+                }
+            }
+        ]);
+    }
+
+    #[test]
+    fn err_link_duplicate() { 
+        let err = LinksBlock::parse_expect(&mut token_stream("{ foo -> bar, foo -> baz }")).unwrap_err(); 
+        assert_eq!(err.kind, ParseErrorKind::SemanticDuplicate);
+    }
+
+    //
+    // Integration
+    //
 
 
     //TODO: Test err duplicate in RC integration, like this 
