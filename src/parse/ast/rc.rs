@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::str::FromStr;
 
 use strum_macros::{EnumString, Display};
@@ -46,7 +44,7 @@ pub struct ResourceClass {
 
     pub links : Option<LinksBlock>,
 
-    pub methods : HashMap<MethodName, Method>,
+    pub methods : Methods,
 }
 impl ResourceClass { 
     pub fn default_status(data_is_some: bool, verb: MethodName) -> Number { 
@@ -84,7 +82,7 @@ impl Peekable for ResourceClass {
             let mut data : Option<Type> = None; 
             let mut interface : Option<InterfaceExpression> = None;
             let mut links : Option<LinksBlock> = None; 
-            let mut methods = HashMap::<MethodName, Method>::new(); 
+            let mut methods = Methods::new(); 
 
             stream.next()?.expect_punctuation(Punctuation::BraceOpen)?; 
             loop { 
@@ -108,24 +106,25 @@ impl Peekable for ResourceClass {
                     // Bonus check for implied duplicate method names
                     // This is an edge case - explicit duplicate names are caught in `Method::parse_expect`, 
                     // but implied names can't be caught there since the default is determined by the `data` field for GET requests
+                    //
                     // https://veneto.notion.site/Incorrect-position-for-duplicate-implied-method-verb-502f7ba853b442bd80179f6db7af3776
                     //TAG: DUPLICATE_IMPLIED_VERB
                     let default_status = Self::default_status(data.is_some(), method.name);
-                    if method.outputs.contains_key(&None) && method.outputs.contains_key(&Some(default_status.clone())) { 
+                    
+                    if
+                        method.outputs.iter().any(|m| m.status.is_none()) &&
+                        method.outputs.iter().any(|m| m.status == Some(default_status.clone()))
+                    { 
                         return Err(err_ref.as_err(ParseErrorKind::Semantic(
                             format!("Duplicate output for default status {default_status} (one of them is implied)")
                         )))
                     }
-                    // some funny borrow checker shenanigans going on here 
 
-                    match methods.entry(method.name) { 
-                        Entry::Occupied(_) => { 
-                            return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
-                        },
-                        Entry::Vacant(entry) => { 
-                            entry.insert(method);
-                        }
+                    if methods.iter().any(|other| other.name == method.name) { 
+                        return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
                     }
+
+                    methods.push(method); 
                 }
 
             }
@@ -287,22 +286,36 @@ pub struct Method {
 
 
     /// This represents the outputs of a method - 
-    /// mapping their status to their response type.  
+    /// their statuses and types. 
     /// 
-    /// Both of those things are optional, and their defaults will be specified in documentation.
+    /// Both of those things are optional.  The default behavior is described here:
+    /// https://veneto.notion.site/Resource-Class-a0ef96008d83457e99590b35270affeb
+    /// 
     /// However, the parser currently does not allow them both to be empty.  
-    /// Therefore, the None -> None pair will never exist.
     /// This might get converted to some other type in the future if we need to guarantee that for type safety,
     /// but since they both have defaults it's staying like this for now 
+    /// 
     ///TAG: REASON_PHRASES
     /// https://veneto.notion.site/HTTP-reason-phrases-instead-of-codes-772c7fc3d21146aa922573913c8adc35
-    pub outputs : HashMap<Option<Number>, Option<RCType>>, 
+    pub outputs : MethodOutputs, 
 }
+
+type Methods = Vec<Method>;
+
 #[derive(Debug, PartialEq)]
 pub struct MethodInput { 
     typ: RCType, 
     lax: bool, 
 }
+
+#[derive(Debug, PartialEq)]
+pub struct MethodOutput { 
+    status: Option<Number>, 
+    typ: Option<RCType>
+}
+
+type MethodOutputs = Vec<MethodOutput>;
+
 
 impl Expectable for Method { 
     fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
@@ -334,7 +347,7 @@ impl Expectable for Method {
                 Some(Punctuation::Arrow) => (), // If it's an arrow, continue on below 
                 Some(Punctuation::Semicolon) => { 
                     // If it's a semicolon, we're done here
-                    return Ok(Method { name, input, outputs: HashMap::new() })
+                    return Ok(Method { name, input, outputs: MethodOutputs::new() })
                 },
                 _ => return Err(next.as_err_unexpected())
             }
@@ -343,8 +356,7 @@ impl Expectable for Method {
 
         // Now let's handle outputs 
         // We expect them to be here because it's guaranteed above 
-        // A sanity check here would be nice but we don't currently have the means to do that really 
-        let mut outputs = HashMap::<Option<Number>, Option<RCType>>::new(); 
+        let mut outputs = MethodOutputs::new(); 
 
         loop { 
             // First check for a status.  
@@ -370,14 +382,11 @@ impl Expectable for Method {
                 return Err(peek.as_semantic_error("Method outputs must have a status and/or a type"))
             }
 
-            match outputs.entry(status) { 
-                Entry::Occupied(_) => { 
-                    return Err(peek.as_err(ParseErrorKind::SemanticDuplicate))
-                },
-                Entry::Vacant(e) => { 
-                    e.insert(typ);
-                },
+            if outputs.iter().any(|other| other.status == status) { 
+                return Err(peek.as_err(ParseErrorKind::SemanticDuplicate))
             }
+            outputs.push(MethodOutput { status, typ });
+
 
             let next = stream.next()?; 
             match next.as_punctuation() { 
@@ -442,8 +451,6 @@ impl Expectable for RCType {
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
-
     use crate::parse::ast::types::{ TypeKind, StructField };
     use crate::parse::ast::types::test::make_simple_type;
     use crate::parse::ast::{ general::GenericIdentifier };
@@ -451,7 +458,7 @@ mod test {
     use crate::parse::{ParseResult, TestUnwrap, ParseErrorKind};
     use crate::parse::ast::{Expectable};
 
-    use super::{Method, RCType, MethodInput, MethodName, SpecialType, LinksBlock, Link, RCIdentifier};
+    use super::{Method, RCType, MethodInput, MethodName, SpecialType, LinksBlock, Link, RCIdentifier, MethodOutput};
 
     fn parse_method(input: &str) -> ParseResult<Method> { 
         let mut stream = token_stream(input); 
@@ -481,7 +488,9 @@ mod test {
                 typ: make_ident_type("foo"), 
                 lax: false, 
             }), 
-            outputs: HashMap::from([( Some("200".to_string()), Some(make_ident_type("bar")) )])
+            outputs: vec![ 
+                MethodOutput { status: Some("200".to_string()), typ:  Some(make_ident_type("bar")) }
+            ]
         })
     }
 
@@ -490,7 +499,9 @@ mod test {
         assert_method("POST -> @empty;", Method { 
             name: MethodName::Post,
             input: None, 
-            outputs: HashMap::from([( None, Some(RCType::Special(SpecialType::Empty)) )])
+            outputs: vec![ 
+                MethodOutput { status: None, typ: Some(RCType::Special(SpecialType::Empty)) }
+            ]
         })
     }
 
@@ -502,7 +513,9 @@ mod test {
                 typ: make_ident_type("foo"), 
                 lax: false, 
             }), 
-            outputs: HashMap::from([( None, Some(make_ident_type("bar")) )])
+            outputs: vec![ 
+                MethodOutput { status: None, typ: Some(make_ident_type("bar")) }
+            ]
         });
 
         assert_method("POST foo -> #204;", Method { 
@@ -511,7 +524,9 @@ mod test {
                 typ: make_ident_type("foo"), 
                 lax: false, 
             }), 
-            outputs: HashMap::from([( Some("204".to_string()), None )])
+            outputs: vec![ 
+                MethodOutput { status: Some("204".to_string()), typ: None }
+            ]
         });
     }
 
@@ -520,11 +535,11 @@ mod test {
         assert_method("POST -> bar, #204, #422 foo;", Method { 
             name: MethodName::Post, 
             input: None, 
-            outputs: HashMap::from([
-                ( None, Some(make_ident_type("bar")) ),
-                ( Some("204".to_string()), None ),
-                ( Some("422".to_string()), Some(make_ident_type("foo")) ),
-            ])
+            outputs: vec![ 
+                MethodOutput { status: None, typ: Some(make_ident_type("bar")) },
+                MethodOutput { status: Some("204".to_string()), typ: None },
+                MethodOutput { status: Some("422".to_string()), typ: Some(make_ident_type("foo")) },
+            ]
         })
     }
 
@@ -559,13 +574,14 @@ mod test {
                 ]))), 
                 lax: false 
             }), 
-            outputs: HashMap::from([ 
-                (None, Some( 
-                    make_simple_rc_type(TypeKind::Array(Box::new(
+            outputs: vec![ 
+                MethodOutput { 
+                    status: None, 
+                    typ: Some(make_simple_rc_type(TypeKind::Array(Box::new(
                         make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("baz".to_string())))
-                    )))
-                ))
-            ])
+                    )))),
+                }
+            ]
         });
     }
 
@@ -577,7 +593,9 @@ mod test {
                 typ: make_simple_rc_type(TypeKind::Identifier(GenericIdentifier::Simple("foo".to_string()))), 
                 lax: true,
             }),
-            outputs: HashMap::from([( None, Some(RCType::Special(SpecialType::Empty)))]),
+            outputs: vec![ 
+                MethodOutput { status: None, typ: Some(RCType::Special(SpecialType::Empty)) }
+            ]
         })
     }
 
