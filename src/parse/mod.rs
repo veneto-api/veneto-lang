@@ -39,7 +39,7 @@ pub enum ParseErrorKind {
 
     /// A miscellaneous semantic error while parsing,
     /// described by its associated message.
-    Semantic(&'static str),
+    Semantic(String),
 
     /// The syntax used is only valid for structs
     SemanticStructOnly(Terminal), 

@@ -7,7 +7,7 @@ use super::general::GenericIdentifier;
 
 use strum_macros::Display;
 
-#[derive(PartialEq, Display, Debug)]
+#[derive(PartialEq, Display, Debug, Hash)]
 pub enum TypeKind { 
     /// A reference to an existing type 
     Identifier(GenericIdentifier),
@@ -46,7 +46,7 @@ impl From<InnerTypeKind> for TypeKind {
 
 /// This represents a type expression - 
 /// that can be a reference to an existing type, or a new one. 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Hash)]
 pub struct Type { 
     pub kind: TypeKind, 
     
@@ -71,7 +71,7 @@ pub struct Type {
 pub type StructBody = Vec<StructField>;
 
 /// This is an individual field declaration within a `Struct`
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Hash)]
 pub struct StructField { 
     pub name: String, 
     /// This is the field's type, 

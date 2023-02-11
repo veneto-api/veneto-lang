@@ -5,7 +5,7 @@ use crate::parse::tokens::{Punctuation};
 use super::{Peekable, Expectable};
 
 /// This is an identifier that can accept generic parameters.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Hash)]
 pub enum GenericIdentifier { 
     Simple(String), 
     Generic(String, Vec<GenericIdentifier>)

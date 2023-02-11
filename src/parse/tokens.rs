@@ -154,7 +154,7 @@ impl Token {
 
     pub fn as_semantic_error(&self, msg: &'static str) -> ParseError { 
         ParseError { 
-            kind: ParseErrorKind::Semantic(msg), 
+            kind: ParseErrorKind::Semantic(msg.to_string()), 
             position: self.position,
             backtrace: Backtrace::capture(),
         }
