@@ -71,10 +71,11 @@ links_block = [{ link ^+ ',' }] ;
 link = identifier ['?'] '->' rc_reference ;
 
 
-rc_method = method_name [method_input] ['->' { method_output ^ ',' }] ';' ;
+rc_method = method_name [method_input] ['->' method_outputs] ';' ;
 method_name = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE' ;
-method_input = rc_type ['%'];
-method_status = '#' Number;
+method_input = rc_type ['%'] ;
+method_status = '#' Number ;
+method_outputs = method_output [{',' method_output}] ;
 method_output = [method_status] [rc_type] ;
 (* SEMANTICS: 👆 At least one of these two must be present 
     Otherwise, this could technically be empty.  Like, this would be technically valid.  Lol.

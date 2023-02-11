@@ -505,4 +505,17 @@ mod test {
         assert!(matches!(err.kind, ParseErrorKind::Semantic(_)));
     }
 
+    #[test]
+    fn err_multiple_response() { 
+        assert_method("POST -> bar, #204, #422 foo;", Method { 
+            name: MethodName::Post, 
+            input: None, 
+            outputs: vec![
+                MethodOutput { status: None, typ: Some(make_ident_type("bar")) }, 
+                MethodOutput { status: Some("204".to_string()), typ: None }, 
+                MethodOutput { status: Some("422".to_string()), typ: Some(make_ident_type("foo")) },
+            ] 
+        })
+    }
+
 }

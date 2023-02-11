@@ -3,30 +3,30 @@ resource Ref<T> {
 	data T
 	
 	/// GET is not mandatory for this type
-	GET -> #405 
+	GET -> #405;
 
     /// Removes the referenced item
-	DELETE
+	DELETE;
 }
 
 resource List<T>  {
 
-	data T[]
+	data Ref<T>[]
 
 	links { 
         /**
-            References the next page of the collection, if such a page exists.
+            References the next page of the list, if such a page exists.
 
-            If empty, this is the final page of the collection. 
+            If empty, this is the final page of the list. 
         */
 		next ->? @self, 
 	}
 
-    /// Renders the current page of the collection.
-	GET
+    /// Renders the current page of the list.
+	GET;
 
-	/// Creates a new item within the collection. 
-	POST T -> #201 T 
+	/// Creates a new item within the list. 
+	POST T -> #201 T;
 }
 
 
@@ -36,14 +36,11 @@ resource List<T>  {
     For example, this is appropriate to allow users to upload and download images. 
 */
 resource Media { 
-
-	GET -> @media 
-
-	PUT @media
-
+	GET -> @media;
+	PUT @media;
 }
 
-/// An Action is a simple POST-only link. 
+/// An Action is a simple POST-only link with no request body. 
 resource Action { 
-	POST -> #204
+	POST -> #204;
 }
