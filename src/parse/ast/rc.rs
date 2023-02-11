@@ -435,7 +435,7 @@ impl Expectable for RCType {
 mod test {
     use std::collections::HashMap;
 
-    use crate::parse::ast::types::{ TypeKind };
+    use crate::parse::ast::types::{ TypeKind, StructField };
     use crate::parse::ast::types::test::make_simple_type;
     use crate::parse::ast::{ general::GenericIdentifier };
     use crate::parse::lexer_tests::token_stream;
@@ -486,7 +486,7 @@ mod test {
     }
 
     #[test]
-    fn implied_response() { 
+    fn method_implied_response() { 
         assert_method("PATCH foo -> bar;", Method { 
             name: MethodName::Patch, 
             input: Some(MethodInput { 
@@ -507,19 +507,7 @@ mod test {
     }
 
     #[test]
-    fn err_empty_response() { 
-        let err = parse_method("POST foo ->");
-        assert!(err.is_err());
-    }
-
-    #[test]
-    fn err_get_body() { 
-        let err = parse_method("GET foo -> #200;").unwrap_err();
-        assert!(matches!(err.kind, ParseErrorKind::Semantic(_)));
-    }
-
-    #[test]
-    fn err_multiple_response() { 
+    fn method_multiple_response() { 
         assert_method("POST -> bar, #204, #422 foo;", Method { 
             name: MethodName::Post, 
             input: None, 
@@ -532,9 +520,56 @@ mod test {
     }
 
     #[test]
+    fn err_empty_response() { 
+        let err = parse_method("POST foo ->");
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn err_get_body() { 
+        let err = parse_method("GET foo -> #200;").unwrap_err();
+        assert!(matches!(err.kind, ParseErrorKind::Semantic(_)));
+    }
+
+    #[test]
     fn err_duplicate_responses() { 
         let err = parse_method("POST -> #201, #400 err, #201 foo;").unwrap_err();
         assert_eq!(err.kind, ParseErrorKind::SemanticDuplicate);
+    }
+
+    #[test]
+    fn method_type_literal() { 
+        assert_method("POST { foo: bar } -> baz[];", Method { 
+            name: MethodName::Post, 
+            input: Some(MethodInput { 
+                typ: RCType::Normal(make_simple_type(TypeKind::Struct(vec![ 
+                    StructField { 
+                        name: "foo".to_string(), 
+                        typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("bar".to_string()))),
+                    }
+                ]))), 
+                lax: false 
+            }), 
+            outputs: HashMap::from([ 
+                (None, Some( 
+                    make_simple_rc_type(TypeKind::Array(Box::new(
+                        make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("baz".to_string())))
+                    )))
+                ))
+            ])
+        });
+    }
+
+    #[test]
+    fn lax() { 
+        assert_method("POST foo% -> @empty;", Method { 
+            name: MethodName::Post,
+            input: Some(MethodInput { 
+                typ: make_simple_rc_type(TypeKind::Identifier(GenericIdentifier::Simple("foo".to_string()))), 
+                lax: true,
+            }),
+            outputs: HashMap::from([( None, Some(RCType::Special(SpecialType::Empty)))]),
+        })
     }
 
 
