@@ -14,14 +14,14 @@ pub enum InterfaceValueType {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct InterfaceField { 
-    name: String, 
+    pub name: String, 
 
     /// The type of the field value, 
     /// named `typ` because `type` is a reserved Rust keyword 
-    typ: InterfaceValueType,
+    pub typ: InterfaceValueType,
 
     /// True if the field is marked as optional with a `?` before the `:`. 
-    optional: bool, 
+    pub optional: bool, 
 }
 
 /// The body of an Interface literal

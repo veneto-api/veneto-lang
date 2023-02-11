@@ -273,6 +273,18 @@ pub enum MethodName {
     Put, 
     Delete,
 }
+impl Expectable for MethodName { 
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
+        let token = stream.next()?; 
+        let name = token.as_identifier()
+            .ok_or(token.as_err_unexpected())?;
+            // Here we're looking for a method name,
+            // if we don't find an identifier this would return an "expected identifier" error 
+            // which doesn't exactly make sense to the user.  This got me during testing.  
+        
+        Self::from_str(&name).map_err(|_| token.as_err(ParseErrorKind::UnknownMethodName))
+    }
+}
 
 
 #[derive(Debug, PartialEq)]
@@ -321,10 +333,7 @@ type MethodOutputs = Vec<MethodOutput>;
 
 impl Expectable for Method { 
     fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
-        let name = stream.next()?;
-        let name = MethodName::from_str(&name.try_as_identifier()?)
-            .map_err(|_| name.as_err(ParseErrorKind::UnknownMethodName))?; 
-
+        let name = MethodName::parse_expect(stream)?;
 
         // First, check for input type
         // Types can't be peeked, so we have to use other context to determine whether or not to expect one 
@@ -453,7 +462,9 @@ impl Expectable for RCType {
 
 #[cfg(test)]
 mod test {
-    use crate::parse::ast::interfaces::InterfaceExpression;
+    use std::vec;
+
+    use crate::parse::ast::interfaces::{InterfaceExpression, InterfaceField, InterfaceValueType};
     use crate::parse::ast::types::{ TypeKind, StructField };
     use crate::parse::ast::types::test::make_simple_type;
     use crate::parse::ast::{ general::GenericIdentifier };
@@ -737,9 +748,94 @@ mod test {
         })
     }
 
+    #[test]
+    fn rc_generics() { 
+        assert_rc("resource foo<T> {}", ResourceClass { 
+            declaration: RCDeclaration::Basic(RCIdentifier { 
+                base: "foo".to_string(), 
+                generics: vec![ RCIdentifier { base: "T".to_string(), generics: vec![] } ] 
+            }),
 
-    //TODO: Test err duplicate in RC integration, like this 
-    // let err = parse_method("POST -> bar, #200 foo;").unwrap_err();
-    // assert!(matches!(err.kind, ParseErrorKind::Semantic(_)))
+            data: None, 
+            interface: None, 
+            links: None, 
+            methods: vec![], 
+        });
+    }
+
+    #[test]
+    fn rc_extends() { 
+        assert_rc("resource foo extends bar<T> {}", ResourceClass { 
+            declaration: RCDeclaration::Extended(
+                "foo".to_string(), 
+                RCIdentifier { 
+                    base: "bar".to_string(), 
+                    generics: vec![ 
+                        RCIdentifier { base: "T".to_string(), generics: vec![] }
+                    ]
+                }
+            ),
+
+            data: None, 
+            interface: None, 
+            links: None, 
+            methods: vec![], 
+        })
+    }
+
+    #[test]
+    fn err_extends_flags() { 
+        let err = parse_rc("resource foo<T> extends bar<T> {}").unwrap_err();
+        assert!(matches!(err.kind, ParseErrorKind::Semantic(_)))
+    }
+
+    #[test]
+    fn err_implied_duplicate_method() { 
+        let err = parse_rc("resource foo { 
+            POST -> #422; 
+            GET -> bar,
+                #405 baz; 
+        }").unwrap_err();
+
+        assert!(matches!(err.kind, ParseErrorKind::Semantic(_)))
+    }
+
+    #[test]
+    fn rc_data_literal() { 
+        assert_rc(
+            "resource rc { 
+                data { foo: bar }[]
+
+                interface { 
+                    q: string,
+                }
+            }", 
+            ResourceClass { 
+                declaration: RCDeclaration::Basic(
+                    RCIdentifier { base: "rc".to_string(), generics: vec![] }
+                ),
+
+                data: Some(make_simple_type(TypeKind::Array(Box::new(
+                    make_simple_type(TypeKind::Struct(vec![ 
+                        StructField { 
+                            name: "foo".to_string(),
+                            typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("bar".to_string()))),
+                        }
+                    ]))
+                )))),
+
+                interface: Some(InterfaceExpression::Literal(vec![ 
+                    InterfaceField { 
+                        name: "q".to_string(), 
+                        typ: InterfaceValueType::String, 
+                        optional: false, 
+                    }
+                ])),
+
+                links: None, 
+                methods: vec![],
+            }
+        )
+    }
 
 }

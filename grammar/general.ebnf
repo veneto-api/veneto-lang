@@ -18,5 +18,5 @@ use_operand = identifier ['as' identifier];
 document = [{ 
     use | 
     (* Data *) type_alias | 
-    (* API *) interface_decl | resource_class
+    (* API *) interface_decl | resource_class | rc_entry_directive
  }];

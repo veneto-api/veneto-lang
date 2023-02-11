@@ -85,6 +85,7 @@ impl<T> TestUnwrap<T> for ParseResult<T> {
                 // So I'm doing this hack nonsense instead, 
                 // so that only the `ParseError` stacktrace gets printed and not the panic one which is always irrelevant
                 std::process::abort()
+                // panic!()
             }
         }
     }
