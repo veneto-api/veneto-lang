@@ -11,12 +11,7 @@ use = 'use' use_tree ;
 use_tree = use_path '::' ( '*' | '{' [{ use_tree ^ ',' }] '}' | use_operand );
 
 use_path = { identifier ^ '::'};
-use_operand = Never 
-(* Maybe later! 
-    TAG: USE_ALIAS
-    https://veneto.notion.site/Use-alias-ce0b472956d44607aa4c4e03bb5c1833
-    use_operand = identifier ['as' identifier];  
-*)
+use_operand = identifier ['as' identifier];  
 
 
 (* Top-level grammar *)
