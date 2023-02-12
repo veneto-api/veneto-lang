@@ -16,7 +16,7 @@ mod lexer_tests;
 
 use std::{backtrace::Backtrace, fmt::Debug};
 
-use self::{tokens::{Punctuation, Position, TokenKind, Keyword, Token, Terminal}};
+use self::{tokens::{Punctuation, Position, TokenKind, Keyword, Terminal}};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseErrorKind { 
@@ -76,21 +76,3 @@ impl Debug for ParseError {
         )
     }
 }
-
-/// Describes how the clause is terminated and where the TokenStream cursor is pointed, 
-/// so that the calling function knows what to do next. 
-pub enum ClauseDelim { 
-    /// The clause found an explicit end marker, which it consumed
-    Exit, 
-    /// The clause found an explicit continuation marker, which it consumed
-    Continue, 
-
-    /// The clause found a token it does not recognize, which it did not consume
-    Unexpected(Token), 
-}
-
-/// A **clause** is a processed AST node, along with information about how it was terminated.
-/// 
-/// This is especially useful for nestable grammar features like Use Trees or Generic Identifiers.
-/// These are parsed recursively, and the calling stack frame needs to understand whether it should continue or exit its current context.
-pub type ClauseResult<T> = Result<(T, ClauseDelim), ParseError>; 
