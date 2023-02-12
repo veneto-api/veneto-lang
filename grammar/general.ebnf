@@ -3,7 +3,7 @@ identifier = /[a-zA-Z_]\w+/ - reserved;
 (* Generics *)
 
 generic_identifier  = identifier [ generic_params ]          ;
-generic_params      =  '<' { generic_identifier ^ ',' } '>' ;
+generic_params      =  '<' [{ generic_identifier ^+ ',' }] '>' ;
 
 
 (* Imports *)

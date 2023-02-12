@@ -159,18 +159,10 @@ impl RCIdentifier {
 }
 impl From<RCIdentifier> for GenericIdentifier { 
     fn from(ident: RCIdentifier) -> Self {
-        fn convert(rcid: RCIdentifier) -> GenericIdentifier { 
-            if rcid.generics.is_empty() { 
-                GenericIdentifier::Simple(rcid.base)
-            } else { 
-                GenericIdentifier::Generic(
-                    rcid.base, 
-                    rcid.generics.into_iter().map(convert).collect(),
-                )
-            }
+        GenericIdentifier { 
+            base: ident.base, 
+            args: ident.generics.into_iter().map(GenericIdentifier::from).collect(),
         }
-
-        convert(ident)
     }
 }
 impl Expectable for RCIdentifier { 
@@ -179,12 +171,9 @@ impl Expectable for RCIdentifier {
         //TAG: RC_FLAGS 
         // Until we add flags, this is just the same as a `GenericIdentifier`, so we just convert it here 
         fn convert(gid: GenericIdentifier) -> RCIdentifier { 
-            match gid { 
-                GenericIdentifier::Simple(base) => RCIdentifier { base, generics: Vec::new() },
-                GenericIdentifier::Generic(base, generics) => RCIdentifier { 
-                    base, 
-                    generics: generics.into_iter().map(convert).collect(),
-                }
+            RCIdentifier { 
+                base: gid.base, 
+                generics: gid.args.into_iter().map(convert).collect(),
             }
         }
 
@@ -486,8 +475,8 @@ mod test {
     fn make_simple_rc_type(kind: TypeKind) -> RCType { 
         RCType::Normal(make_simple_type(kind))
     }
-    fn make_ident_type(name: &str) -> RCType { 
-        RCType::Normal(make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple(name.to_string()))))
+    fn make_ident_type(name: &'static str) -> RCType { 
+        RCType::Normal(make_simple_type(TypeKind::Identifier(GenericIdentifier::simple(name))))
     }
 
     //
@@ -583,7 +572,7 @@ mod test {
                 typ: RCType::Normal(make_simple_type(TypeKind::Struct(vec![ 
                     StructField { 
                         name: "foo".to_string(), 
-                        typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("bar".to_string()))),
+                        typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("bar"))),
                     }
                 ]))), 
                 lax: false 
@@ -592,7 +581,7 @@ mod test {
                 MethodOutput { 
                     status: None, 
                     typ: Some(make_simple_rc_type(TypeKind::Array(Box::new(
-                        make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("baz".to_string())))
+                        make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("baz")))
                     )))),
                 }
             ]
@@ -604,7 +593,7 @@ mod test {
         assert_method("POST foo% -> @empty;", Method { 
             name: MethodName::Post,
             input: Some(MethodInput { 
-                typ: make_simple_rc_type(TypeKind::Identifier(GenericIdentifier::Simple("foo".to_string()))), 
+                typ: make_simple_rc_type(TypeKind::Identifier(GenericIdentifier::simple("foo"))), 
                 lax: true,
             }),
             outputs: vec![ 
@@ -707,7 +696,7 @@ mod test {
 
             data: Some(make_simple_type(
                 TypeKind::Array(Box::new(
-                    make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("int".to_string())))
+                    make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("int")))
                 ))
             )),
 
@@ -819,7 +808,7 @@ mod test {
                     make_simple_type(TypeKind::Struct(vec![ 
                         StructField { 
                             name: "foo".to_string(),
-                            typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("bar".to_string()))),
+                            typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("bar"))),
                         }
                     ]))
                 )))),

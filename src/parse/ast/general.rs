@@ -1,101 +1,70 @@
-use crate::parse::{ClauseResult, ClauseDelim, ParseResult};
-use crate::parse::{lexer::TokenStream};
-use crate::parse::tokens::{Punctuation};
+use crate::parse::ParseResult;
+use crate::parse::lexer::TokenStream;
+use crate::parse::tokens::{Punctuation, Terminal};
+use crate::peek_match;
 
-use super::{Peekable, Expectable};
+use super::{Peekable, Expectable, Finishable};
 
 /// This is an identifier that can accept generic parameters.
 #[derive(PartialEq, Eq, Debug, Hash)]
-pub enum GenericIdentifier { 
-    Simple(String), 
-    Generic(String, Vec<GenericIdentifier>)
+pub struct GenericIdentifier { 
+    pub base: String, 
+    pub args: GenericArgs,
+}
+pub type GenericArgs = Vec<GenericIdentifier>; 
+
+impl Peekable for GenericIdentifier { 
+    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
+        if let Some(base) = stream.peek_for_identifier()? { 
+            Ok(Some(GenericIdentifier { 
+                base, 
+                args: GenericArgs::parse_peek(stream)?.unwrap_or_default(),
+            }))
+        } else { 
+            Ok(None)
+        }
+    }
+}
+impl Expectable for GenericIdentifier {
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
+        Ok(GenericIdentifier { 
+            base: stream.next()?.try_as_identifier()?, 
+            args: GenericArgs::parse_peek(stream)?.unwrap_or_default(),
+        })
+    }
+}
+
+
+impl Finishable for GenericArgs { 
+    const INITIAL_TOKEN: Terminal = Terminal::Punctuation(Punctuation::GenericOpen);
+
+    fn parse_finish(stream: &mut TokenStream) -> ParseResult<Self> {
+        let mut args = Self::new(); 
+        loop { 
+            if let Some(arg) = GenericIdentifier::parse_peek(stream)? {
+                args.push(arg);
+            }
+
+            peek_match!(stream.peek_for_puncutation { 
+                Punctuation::Comma => continue,
+                Punctuation::GenericClose => return Ok(args), 
+                _ => return Err(stream.next()?.as_err_unexpected())
+            })
+        }
+    }
 }
 
 impl GenericIdentifier { 
-
-    fn clause_arg(stream: &mut TokenStream) -> ClauseResult<GenericIdentifier> { 
-
-        fn delim(stream: &mut TokenStream) -> ParseResult<ClauseDelim> { 
-            let peek = stream.peek()?;
-            match peek.as_punctuation() { 
-                Some(Punctuation::Comma) => { 
-                    stream.next()?;
-                    Ok(ClauseDelim::Continue)
-                }, 
-                Some(Punctuation::GenericClose) => {
-                    stream.next()?; 
-                    Ok(ClauseDelim::Exit)
-                },
-                _ => Ok(ClauseDelim::Unexpected(peek))
-            }
-        }
-        
-        let ident = stream.next()?.try_as_identifier()?; 
-        let peek = stream.peek()?; 
-        
-        if Some(Punctuation::GenericOpen) == peek.as_punctuation() { 
-            stream.next()?; 
-            let args = Self::clause_nested(stream)?;
-            Ok((GenericIdentifier::Generic(ident, args), delim(stream)?))
-        } 
-        else { 
-            Ok((GenericIdentifier::Simple(ident), delim(stream)?))
-        }
-    }
-
-
-    fn clause_nested(stream: &mut TokenStream) -> ParseResult<Vec<GenericIdentifier>> { 
-
-        let mut args = Vec::<GenericIdentifier>::new(); 
-        loop { 
-            let (clause, delim) = Self::clause_arg(stream)?;
-            match delim { 
-                ClauseDelim::Continue => { 
-                    args.push(clause); 
-                    continue; 
-                }, 
-                ClauseDelim::Exit => { 
-                    args.push(clause); 
-                    return Ok(args)
-                },
-                ClauseDelim::Unexpected(t) => return Err(t.as_err_unexpected())
-            }
-        }
-    }
-
-    /// Parses a potentially-generic identifier, starting with the provided `base` identifier. 
-    fn finish(stream: &mut TokenStream, ident: String) -> ParseResult<Self> { 
-        let peek = stream.peek()?;
-        if Some(Punctuation::GenericOpen) == peek.as_punctuation() { 
-            stream.next()?; 
-            let args = Self::clause_nested(stream)?; 
-            Ok(GenericIdentifier::Generic(ident, args))
-        } 
-        else { 
-            Ok(GenericIdentifier::Simple(ident))
-        }
-    }
-}
-
-impl Peekable for GenericIdentifier {
-    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
-        match stream.peek_for_identifier()? { 
-            Some(ident) => Self::finish(stream, ident).map(Some),
-            None => Ok(None)
-        }
-    }
-}
-impl Expectable for GenericIdentifier { 
-    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
-        let ident = stream.next()?.try_as_identifier()?;
-        Self::finish(stream, ident)
+    /// Helper function for unit tests
+    pub(crate) fn simple(base: &'static str) -> Self { 
+        Self { base: base.to_string(), args: GenericArgs::default() }
     }
 }
 
 
 #[cfg(test)]
 mod test {
-    use crate::parse::{lexer_tests::{token_stream, assert_punctuation}, ParseResult, lexer::TokenStream, tokens::Punctuation, ParseErrorKind, ast::Expectable};
+    use crate::parse::{lexer_tests::{token_stream, assert_punctuation}, ParseResult, lexer::TokenStream, tokens::Punctuation, ast::Expectable};
 
     use super::GenericIdentifier;
 
@@ -113,7 +82,10 @@ mod test {
     macro_rules! gid {
 
         ($base:literal < $($params:tt),+ >) => { 
-            GenericIdentifier::Generic($base.to_owned(), vec![ $(gid!($params)),+ ])
+            GenericIdentifier { 
+                base: $base.to_owned(), 
+                args: vec![ $(gid!($params)),+ ]
+            }
         };
 
         ($base:ident) => { 
@@ -121,7 +93,10 @@ mod test {
         };
 
         ($base:literal) => {
-            GenericIdentifier::Simple($base.to_owned())
+            GenericIdentifier { 
+                base: $base.to_owned(), 
+                args: vec![],
+            }
         };
 
     }
@@ -149,11 +124,5 @@ mod test {
         let inner = gid!("baz"<"asdf", "ree">);
         assert_eq!(gid, gid!("foo"<"bar", inner, "aaa">));
         assert_punctuation(&mut stream, Punctuation::Comma);
-    }
-
-    #[test]
-    fn fail_trail() { 
-        let res = parse_gid("asdf<jkl, bar,>"); 
-        assert!(matches!(res.unwrap_err().kind, ParseErrorKind::ExpectedIdentifier))
     }
 }

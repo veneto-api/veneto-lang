@@ -261,7 +261,7 @@ pub mod test {
     #[test]
     fn simple_ident() { 
         let (mut stream, typ) = parse_type("asdf@").unwrap();
-        assert_eq!(typ.kind, TypeKind::Identifier(GenericIdentifier::Simple("asdf".to_string())));
+        assert_eq!(typ.kind, TypeKind::Identifier(GenericIdentifier::simple("asdf")));
         assert_punctuation(&mut stream, Punctuation::SpecialType);
     }
 
@@ -276,7 +276,7 @@ pub mod test {
         assert_type_kind("{ foo: bar }", TypeKind::Struct(vec![ 
             StructField { 
                 name: "foo".to_string(), 
-                typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("bar".to_string()))),
+                typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("bar"))),
             }
         ]))
     }
@@ -284,7 +284,7 @@ pub mod test {
     #[test]
     fn simple_array() { 
         assert_type_kind("foo[]", TypeKind::Array(Box::new(
-            make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("foo".to_string())))
+            make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("foo")))
         )));
     }
 
@@ -292,9 +292,12 @@ pub mod test {
     fn tuple_generic() { 
         assert_type_kind("[ foo, bar<baz> ]", TypeKind::Tuple(
             vec![ 
-                make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("foo".to_string()))),
+                make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("foo"))),
                 make_simple_type(
-                    TypeKind::Identifier(GenericIdentifier::Generic("bar".to_string(), vec![ GenericIdentifier::Simple("baz".to_string()) ]))
+                    TypeKind::Identifier(GenericIdentifier { 
+                        base: "bar".to_string(), 
+                        args: vec![ GenericIdentifier::simple("baz") ]
+                    })
                 ),
             ]
         ));
@@ -306,12 +309,18 @@ pub mod test {
             make_simple_type(
                 TypeKind::Array(Box::new(
                     make_simple_type(TypeKind::Identifier(
-                        GenericIdentifier::Generic("foo".to_string(), vec![ 
-                            GenericIdentifier::Generic("bar".to_string(), vec![ 
-                                GenericIdentifier::Simple("asdf".to_string()),
-                                GenericIdentifier::Simple("ree".to_string()),
-                            ])
-                        ])
+                        GenericIdentifier { 
+                            base: "foo".to_string(), 
+                            args: vec![
+                                GenericIdentifier { 
+                                    base: "bar".to_string(), 
+                                    args: vec![ 
+                                        GenericIdentifier::simple("asdf"),
+                                        GenericIdentifier::simple("ree"),
+                                    ]
+                                }
+                            ]
+                        }
                     ))
                 ))
             )
@@ -323,7 +332,7 @@ pub mod test {
         assert_type_kind("{ foo: bar }[]", TypeKind::Array(Box::new(
             make_simple_type(TypeKind::Struct(vec![ StructField { 
                 name: "foo".to_string(),
-                typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("bar".to_string()))),
+                typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("bar"))),
             }]))
         )))
     }
@@ -332,7 +341,7 @@ pub mod test {
     fn tuple_array() { 
         assert_type_kind("[foo][]", TypeKind::Array(Box::new(
             make_simple_type(TypeKind::Tuple(vec![ 
-                make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("foo".to_owned())))
+                make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("foo")))
             ]))
         )))
     }
@@ -343,15 +352,15 @@ pub mod test {
             StructField { 
                 name: "foo".to_string(), 
                 typ: make_simple_type(TypeKind::Array(Box::new(
-                    make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("bar".to_string())))
+                    make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("bar")))
                 ))),
             },
             StructField { 
                 name: "baz".to_string(), 
-                typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::Generic(
-                    "generic".to_string(), 
-                    vec![ GenericIdentifier::Simple("type".to_string()) ],
-                ))),
+                typ: make_simple_type(TypeKind::Identifier(GenericIdentifier{ 
+                    base: "generic".to_string(), 
+                    args: vec![ GenericIdentifier::simple("type") ]
+                })),
             }
         ]))
     }
@@ -361,7 +370,7 @@ pub mod test {
         assert_type("{ foo: bar } out + {asdf: ree}", Type { 
             kind: TypeKind::Struct(vec![ StructField { 
                 name: "foo".to_string(), 
-                typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("bar".to_string()))),
+                typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("bar"))),
             }]),
 
             optional: false, 
@@ -369,7 +378,7 @@ pub mod test {
             in_plus: None, 
             out_plus: Some(vec![ StructField { 
                 name: "asdf".to_string(), 
-                typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("ree".to_string()))),
+                typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("ree"))),
             }])
         })
     }
@@ -378,7 +387,7 @@ pub mod test {
         assert_type("{ foo: bar } out + {asdf: ree} in + {}", Type { 
             kind: TypeKind::Struct(vec![ StructField { 
                 name: "foo".to_string(), 
-                typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("bar".to_string()))),
+                typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("bar"))),
             }]),
 
             optional: false, 
@@ -386,7 +395,7 @@ pub mod test {
             in_plus: Some(vec![ ]), 
             out_plus: Some(vec![ StructField { 
                 name: "asdf".to_string(), 
-                typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::Simple("ree".to_string()))),
+                typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("ree"))),
             }])
         })
     }
@@ -409,10 +418,10 @@ pub mod test {
     #[test]
     fn err_nested_optionals() {
         assert_type("foo<T>?", Type { 
-            kind: TypeKind::Identifier(GenericIdentifier::Generic(
-                "foo".to_string(), 
-                vec![ GenericIdentifier::Simple("T".to_string()) ]
-            )),
+            kind: TypeKind::Identifier(GenericIdentifier {
+                base: "foo".to_string(), 
+                args: vec![ GenericIdentifier::simple("T") ],
+        }),
             optional: true, 
             in_plus: None, 
             out_plus: None, 
