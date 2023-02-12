@@ -143,6 +143,18 @@ impl Token {
         }
     }
 
+    pub fn try_as_string_literal(self) -> ParseResult<String> { 
+        if let TokenKind::StringLiteral(str) = self.kind { 
+            Ok(str)
+        } else { 
+            Err(ParseError { 
+                kind: ParseErrorKind::ExpectedStringLiteral, 
+                position: self.position,
+                backtrace: Backtrace::capture(),
+            })
+        }
+    }
+
     /// Helper method to convert a `RawToken` to an "Unexpected ____" error
     pub fn as_err_unexpected(&self) -> ParseError { 
         ParseError { 
@@ -244,6 +256,7 @@ pub enum Keyword {
     Use, 
     Interface,
     Resource,
+    Entry,
 
     #[strum(serialize="as")]
     PathAlias, 

@@ -84,4 +84,4 @@ method_output = [method_status] [rc_type] ;
 
 
 (* Entry Points *)
-rc_entry_directive = 'entry' identifier StringLiteral ;
+rc_entry_directive = 'entry' StringLiteral '->' rc_ident;

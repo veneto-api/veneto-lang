@@ -24,6 +24,9 @@ pub mod interfaces;
 pub mod rc; 
 
 
+pub mod document; 
+
+
 //
 // Parsing interface
 //
