@@ -271,7 +271,6 @@ fn finish_tuple(stream: &mut TokenStream) -> ParseResult<Vec<Type>> {
 
 #[cfg(test)]
 pub mod test {
-    use crate::parse::TestUnwrap; 
     use crate::parse::ast::Expectable;
     use crate::parse::{ParseResult, lexer::TokenStream, lexer_tests::{token_stream, assert_punctuation}, ParseErrorKind};
     use super::GenericIdentifier; 
@@ -287,11 +286,11 @@ pub mod test {
         typ.map(|x| (stream, x))
     }
     fn assert_type(input: &str, expected: Type) { 
-        let (_, typ) = parse_type(input).test_unwrap(); 
+        let (_, typ) = parse_type(input).unwrap(); 
         assert_eq!(typ, expected); 
     }
     fn assert_type_kind(input: &str, expected: TypeKind) { 
-        let (_, typ) = parse_type(input).test_unwrap();
+        let (_, typ) = parse_type(input).unwrap();
         assert_eq!(typ.kind, expected);
     }
 

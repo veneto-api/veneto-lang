@@ -100,7 +100,6 @@ impl Expectable for InterfaceBody {
 #[cfg(test)]
 mod test {
     use crate::parse::{ParseResult, lexer::TokenStream, tokens::Punctuation};
-    use crate::parse::TestUnwrap; 
 
     use super::{InterfaceBody, finish_interface, InterfaceField, InterfaceValueType};
 
@@ -111,7 +110,7 @@ mod test {
     }
 
     fn assert_interface(input: &str, expected: InterfaceBody) { 
-        let i = parse_interface(input).test_unwrap(); 
+        let i = parse_interface(input).unwrap(); 
         assert_eq!(i, expected);
     }
 

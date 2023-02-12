@@ -469,7 +469,7 @@ mod test {
     use crate::parse::ast::types::test::make_simple_type;
     use crate::parse::ast::{ general::GenericIdentifier };
     use crate::parse::lexer_tests::token_stream;
-    use crate::parse::{ParseResult, TestUnwrap, ParseErrorKind};
+    use crate::parse::{ParseResult, ParseErrorKind};
     use crate::parse::ast::{Expectable, Peekable};
 
     use super::{Method, RCType, MethodInput, MethodName, SpecialType, LinksBlock, Link, RCIdentifier, ResourceClass, RCDeclaration, MethodOutput};
@@ -479,7 +479,7 @@ mod test {
         Method::parse_expect(&mut stream)
     }
     fn assert_method(input: &str, expected: Method) { 
-        assert_eq!( parse_method(input).test_unwrap(), expected );
+        assert_eq!( parse_method(input).unwrap(), expected );
     }
 
 
@@ -619,7 +619,7 @@ mod test {
     //
 
     fn assert_links(input: &str, expected: LinksBlock) { 
-        let res = LinksBlock::parse_expect(&mut token_stream(input)).test_unwrap(); 
+        let res = LinksBlock::parse_expect(&mut token_stream(input)).unwrap(); 
         assert_eq!(res, expected);
     }
 
@@ -682,7 +682,7 @@ mod test {
     }
 
     fn assert_rc(input: &str, expected: ResourceClass) { 
-        let rc = parse_rc(input).test_unwrap().unwrap();
+        let rc = parse_rc(input).unwrap().unwrap();
         assert_eq!(rc, expected); 
     }
 

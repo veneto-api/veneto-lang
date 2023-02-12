@@ -14,7 +14,7 @@ mod ast;
 mod lexer_tests;
 
 
-use std::{backtrace::Backtrace};
+use std::{backtrace::Backtrace, fmt::Debug};
 
 use self::{tokens::{Punctuation, Position, TokenKind, Keyword, Token, Terminal}};
 
@@ -60,7 +60,7 @@ pub enum ParseErrorKind {
     UnknownMethodName, 
 }
 
-#[derive(Debug)]
+
 pub struct ParseError { 
     kind: ParseErrorKind,
     position: Position,
@@ -69,26 +69,11 @@ pub struct ParseError {
 
 pub type ParseResult<T> = Result<T, ParseError>;
 
-#[cfg(test)]
-pub trait TestUnwrap<T> { 
-    fn test_unwrap(self) -> T; 
-}
-#[cfg(test)]
-impl<T> TestUnwrap<T> for ParseResult<T> {
-    fn test_unwrap(self) -> T {
-        match self { 
-            Ok(x) => x,
-            Err(err) => { 
-                println!("ParseError at {}:{}: {:?}", err.position.line, err.position.col, err.kind);
-                println!("{}", err.backtrace);
-
-                // Currently, abort-on-panic is ignored during testing
-                // So I'm doing this hack nonsense instead, 
-                // so that only the `ParseError` stacktrace gets printed and not the panic one which is always irrelevant
-                std::process::abort()
-                // panic!()
-            }
-        }
+impl Debug for ParseError { 
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(
+            format_args!("ParseError at {}:{}: {:?}\n{}", self.position.line, self.position.col, self.kind, self.backtrace)
+        )
     }
 }
 
