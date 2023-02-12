@@ -1,8 +1,9 @@
-use crate::parse::{ClauseResult, ClauseDelim, ParseErrorKind};
+use crate::parse::ParseErrorKind;
 use crate::parse::{lexer::TokenStream, ParseResult};
-use crate::parse::tokens::{Punctuation, TokenKind, Keyword, Terminal};
+use crate::parse::tokens::{Punctuation, Keyword, Terminal, TokenKind};
+use crate::{peek_match};
 
-use super::Expectable;
+use super::{Expectable, Peekable, Finishable};
 use super::general::GenericIdentifier;
 
 use strum_macros::Display;
@@ -13,7 +14,7 @@ pub enum TypeKind {
     Identifier(GenericIdentifier),
 
     /// A tuple represented by the included types, in order
-    Tuple(Vec<Type>),
+    Tuple(Tuple),
 
     Struct(StructBody),
 
@@ -29,7 +30,7 @@ pub enum TypeKind {
 enum InnerTypeKind { 
     Identifier(GenericIdentifier),
 
-    Tuple(Vec<Type>),
+    Tuple(Tuple),
 
     Struct(StructBody),
 }
@@ -67,18 +68,6 @@ pub struct Type {
     pub out_plus: Option<StructBody>, 
 }
 
-/// This is a Struct's body, which is just its set of fields
-pub type StructBody = Vec<StructField>;
-
-/// This is an individual field declaration within a `Struct`
-#[derive(PartialEq, Debug, Hash)]
-pub struct StructField { 
-    pub name: String, 
-    /// This is the field's type, 
-    /// abbreviated to `typ` because `type` is a reserved keyword
-    pub typ: Type, 
-}
-
 impl Type { 
     fn from_inner_kind(inner_kind: InnerTypeKind) -> Self { 
         Self { 
@@ -99,17 +88,13 @@ impl Type {
     }
 
     fn begin_kind(stream: &mut TokenStream) -> ParseResult<InnerTypeKind> { 
-        // First check for the two easy ones
-        if stream.peek_for_puncutation(Punctuation::BraceOpen)? { 
-            // An open brace means it's a struct
-            finish_struct_body(stream).map(InnerTypeKind::Struct)
-        } 
-        else if stream.peek_for_puncutation(Punctuation::BracketOpen)? { 
-            // An open bracket means it's a tuple
-            finish_tuple(stream).map(InnerTypeKind::Tuple)
+        if let Some(str) = StructBody::parse_peek(stream)? { 
+            Ok(InnerTypeKind::Struct(str))
+        }
+        else if let Some(tuple) = Tuple::parse_peek(stream)? { 
+            Ok(InnerTypeKind::Tuple(tuple))
         }
         else { 
-            // Otherwise, it must be an identifier. 
             GenericIdentifier::parse_expect(stream).map(InnerTypeKind::Identifier)
         }
     }
@@ -119,59 +104,42 @@ impl Expectable for Type {
     fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> { 
         let mut typ = Self::from_inner_kind(Self::begin_kind(stream)?);
 
-
-        //TAG: IN_OUT_MODIFIERS
-        fn parse_extension(stream: &mut TokenStream) -> ParseResult<StructBody> { 
-            stream.next()?.expect_punctuation(Punctuation::StructExtension)?;
-            stream.next()?.expect_punctuation(Punctuation::BraceOpen)?; 
-            finish_struct_body(stream)
-        }
-
         loop { 
-            let peek = stream.peek()?; 
-            match peek.as_terminal() { 
-
-                Some(Terminal::Punctuation(Punctuation::Optional)) => { 
+            let err_ref = stream.peek()?; 
+            peek_match!(stream.peek_for_terminal { 
+                Terminal::Punctuation(Punctuation::Optional) => { 
                     if typ.optional { 
-                        return Err(peek.as_semantic_error("Nested optionals are not supported yet"))
+                        return Err(err_ref.as_semantic_error("Nested optionals are not supported yet"))
+                    } else { 
+                        typ.optional = true;
                     }
-                    stream.next()?; 
-                    typ.optional = true 
-                }
-
-                Some(Terminal::Punctuation(Punctuation::BracketOpen)) => { 
-                    stream.next()?; 
+                },
+                Terminal::Punctuation(Punctuation::BracketOpen) => { 
                     stream.next()?.expect_punctuation(Punctuation::BracketClose)?; 
                     typ = Self::wrap_as_array(typ); 
-                }
+                },
 
-                
-                Some(Terminal::Keyword(Keyword::In)) => { 
+                //TAG: IN_OUT_MODIFIERS
+                Terminal::Keyword(Keyword::In) => { 
                     if typ.in_plus.is_some() { 
-                        return Err(peek.as_err(ParseErrorKind::SemanticDuplicate));
-                    }
-                    if !matches!(typ.kind, TypeKind::Struct(_)) { 
-                        return Err(peek.as_err(ParseErrorKind::SemanticStructOnly(Terminal::Keyword(Keyword::In))))
+                        return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate));
                     }
 
-                    stream.next()?;
-                    typ.in_plus = Some(parse_extension(stream)?);
+                    stream.next()?.expect_punctuation(Punctuation::StructExtension)?; 
+                    typ.in_plus = Some(StructBody::parse_expect(stream)?);
                 },
 
-                Some(Terminal::Keyword(Keyword::Out)) => { 
+                Terminal::Keyword(Keyword::Out) => { 
                     if typ.out_plus.is_some() { 
-                        return Err(peek.as_err(ParseErrorKind::SemanticDuplicate));
-                    }
-                    if !matches!(typ.kind, TypeKind::Struct(_)) { 
-                        return Err(peek.as_err(ParseErrorKind::SemanticStructOnly(Terminal::Keyword(Keyword::Out))))
+                        return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate));
                     }
 
-                    stream.next()?;
-                    typ.out_plus = Some(parse_extension(stream)?);
+                    stream.next()?.expect_punctuation(Punctuation::StructExtension)?; 
+                    typ.out_plus = Some(StructBody::parse_expect(stream)?);
                 },
 
-                _ => return Ok(typ) 
-            }
+                _ => return Ok(typ)
+            })
         }
     }
 }
@@ -182,62 +150,51 @@ impl Expectable for Type {
 //
 
 
-impl StructField { 
-    /// Parses a StructField from the current position, starting with the `name`, 
-    /// returning `None` if the struct is empty from the current position.  
-    /// (This accounts for both completely empty structs as well as extraneous commas) 
-    pub fn begin(stream: &mut TokenStream) -> ClauseResult<Option<Self>> { 
-        let first = stream.next()?; 
-        match first.kind { 
-            TokenKind::Word(name) => { 
-                stream.next()?.expect_punctuation(Punctuation::Colon)?;
-                let typ = Type::parse_expect(stream)?;
-                let res = Some(Self{ name, typ });
-        
-                let peek = stream.peek()?; 
-                match peek.as_punctuation() { 
-                    Some(Punctuation::Comma) => { 
-                        stream.next()?; 
-                        Ok((res, ClauseDelim::Continue))
-                    }, 
-                    Some(Punctuation::BraceClose) => { 
-                        stream.next()?; 
-                        Ok((res, ClauseDelim::Exit))
-                    },
-                    _ => Err(peek.as_err_unexpected())
+/// This is a Struct's body, which is just its set of fields
+pub type StructBody = Vec<StructField>;
+
+/// This is an individual field declaration within a `Struct`
+#[derive(PartialEq, Debug, Hash)]
+pub struct StructField { 
+    pub name: String, 
+    /// This is the field's type, 
+    /// abbreviated to `typ` because `type` is a reserved keyword
+    pub typ: Type, 
+}
+impl Finishable for StructBody { 
+    const INITIAL_TOKEN: Terminal = Terminal::Punctuation(Punctuation::BraceOpen);
+
+    fn parse_finish(stream: &mut TokenStream) -> ParseResult<Self> {
+        let mut fields = Self::new(); 
+        loop { 
+            peek_match!(stream.peek_for_puncutation { 
+                Punctuation::Comma => continue, 
+                Punctuation::BraceClose => return Ok(fields),
+                _ => { 
+                    let err_ref = stream.peek()?; 
+
+                    if err_ref.kind == TokenKind::EOF { 
+                        return Err(err_ref.as_err_unexpected())
+                    }
+
+                    let field = StructField::parse_expect(stream)?; 
+                    if fields.iter().any(|other| other.name == field.name) { 
+                        return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
+                    } else { 
+                        fields.push(field)
+                    }
                 }
-            },
-
-            TokenKind::Punctuation(Punctuation::BraceClose) => { 
-                Ok((None, ClauseDelim::Exit))
-            },
-
-            _ => Err(first.as_err_unexpected())
+            })
         }
-
     }
 }
 
-fn finish_struct_body(stream: &mut TokenStream) -> ParseResult<StructBody> { 
-    let mut fields = Vec::<StructField>::new(); 
-
-    loop { 
-        let err_ref = stream.peek()?; 
-        let (field, delim) = StructField::begin(stream)?; 
-        if let Some(field) = field { 
-
-            if fields.iter().any(|other| other.name == field.name) { 
-                return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
-            }
-
-            fields.push(field); 
-        }
-
-        match delim { 
-            ClauseDelim::Continue => continue, 
-            ClauseDelim::Exit => return Ok(fields), 
-            ClauseDelim::Unexpected(t) => return Err(t.as_err_unexpected()), 
-        }
+impl Expectable for StructField { 
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
+        let name = stream.next()?.try_as_identifier()?; 
+        stream.next()?.expect_punctuation(Punctuation::Colon)?; 
+        let typ = Type::parse_expect(stream)?; 
+        Ok(StructField { name, typ })
     }
 }
 
@@ -245,27 +202,25 @@ fn finish_struct_body(stream: &mut TokenStream) -> ParseResult<StructBody> {
 // Tuples
 //
 
-fn finish_tuple(stream: &mut TokenStream) -> ParseResult<Vec<Type>> { 
+type Tuple = Vec<Type>; 
+impl Peekable for Tuple { 
+    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
+        if stream.peek_for_puncutation(Punctuation::BracketOpen)? { 
 
-    let mut types = Vec::<Type>::new(); 
-    loop { 
-        // Handle empty tuple or extraneous comma
-        if Some(Punctuation::BracketClose) == stream.peek()?.as_punctuation() { 
-            stream.next()?; 
-            return Ok(types)
+            let mut types = Self::new(); 
+            loop { 
+
+                peek_match!(stream.peek_for_puncutation { 
+                    Punctuation::BracketClose => return Ok(Some(types)),
+                    Punctuation::Comma => continue, 
+                    _ => types.push( Type::parse_expect(stream)? )
+                })
+
+            }
+
         }
-
-        let typ = Type::parse_expect(stream)?; 
-        types.push(typ); 
-
-        let next = stream.next()?; 
-        match next.as_punctuation() {
-            Some(Punctuation::Comma) => continue, 
-            Some(Punctuation::BracketClose) => return Ok(types),
-            _ => return Err(next.as_err_unexpected()) 
-        }
+        else { Ok(None) }
     }
-
 }
 
 
@@ -274,7 +229,7 @@ pub mod test {
     use crate::parse::ast::Expectable;
     use crate::parse::{ParseResult, lexer::TokenStream, lexer_tests::{token_stream, assert_punctuation}, ParseErrorKind};
     use super::GenericIdentifier; 
-    use crate::parse::tokens::{ Terminal, Keyword, Punctuation }; 
+    use crate::parse::tokens::Punctuation; 
 
     use super::{Type, TypeKind, StructField};
  
@@ -446,22 +401,13 @@ pub mod test {
     }
 
     #[test]
-    fn struct_mod_type_err() { 
-        let res = parse_type("[ foo<T> ] out + { foo: bar }");
-        assert_eq!(res.unwrap_err().kind, ParseErrorKind::SemanticStructOnly(Terminal::Keyword(Keyword::Out)));
-
-        let res = parse_type("[ foo<T> ] in + { foo: bar }");
-        assert_eq!(res.unwrap_err().kind, ParseErrorKind::SemanticStructOnly(Terminal::Keyword(Keyword::In)));
-    }
-
-    #[test]
     fn err_struct_duplicate() { 
         let res = parse_type("{ foo: bar, bar: baz, foo: baz }");
         assert_eq!(res.unwrap_err().kind, ParseErrorKind::SemanticDuplicate)
     }
 
     #[test]
-    fn optional_generic() {
+    fn err_nested_optionals() {
         assert_type("foo<T>?", Type { 
             kind: TypeKind::Identifier(GenericIdentifier::Generic(
                 "foo".to_string(), 

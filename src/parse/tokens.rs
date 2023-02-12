@@ -102,6 +102,37 @@ impl Token {
         }
     }
 
+
+    /// Returns an "Expected" error if this token does not match the provided `Terminal`. 
+    pub fn expect_terminal(&self, expected: Terminal) -> ParseResult<()> { 
+        match expected { 
+            Terminal::Punctuation(expected) => { 
+                if matches!(self.kind, TokenKind::Punctuation(actual) if actual == expected) { 
+                    Ok(())
+                } else { 
+                    Err(ParseError { 
+                        kind: ParseErrorKind::ExpectedPunctuation(expected), 
+                        position: self.position,
+                        backtrace: Backtrace::capture(),
+                    })
+                }
+            }
+            Terminal::Keyword(expected) => { 
+                if matches!(self.as_keyword(), Some(actual) if actual == expected) { 
+                    Ok(())
+                } else { 
+                    Err(ParseError { 
+                        kind: ParseErrorKind::ExpectedKeyword(expected), 
+                        position: self.position,
+                        backtrace: Backtrace::capture(),
+                    })
+                }
+
+            }
+        }
+
+    }
+
     /// Returns `true` if this is a valid identifier.
     /// 
     /// This is preferred to checking the `TokenKind` as the rules may change
@@ -258,8 +289,7 @@ pub enum Keyword {
     Resource,
     Entry,
 
-    #[strum(serialize="as")]
-    PathAlias, 
+    As, 
 
     // Struct mods
     In, 

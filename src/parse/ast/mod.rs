@@ -1,4 +1,4 @@
-use super::{lexer::TokenStream, ParseResult};
+use super::{lexer::TokenStream, ParseResult, tokens::Terminal};
 
 /// This is parses common miscellaneous expressions.
 /// At the time, that's only generic identifiers, so maybe this module should be renamed.
@@ -45,4 +45,36 @@ pub trait Peekable where Self: std::marker::Sized {
     /// first by having a peek at the first token.
     /// If the first token doesn't match, return `None` 
     fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>>;
+}
+
+
+/// A `Finishable` is an AST node with an unambiguous initial token.  
+/// 
+/// A `Finishable` implementation declares an initial token 
+/// - the token that starts off a clause of the implementing node - 
+/// and a method to _finish_ parsing that clause **after** the initial token.
+/// 
+/// This provides `Peekable` and `Expectable` impls for free.
+pub trait Finishable where Self: std::marker::Sized{ 
+
+    /// The "initial token" is the token kind that marks the start of this clause. 
+    const INITIAL_TOKEN: Terminal; 
+
+    /// Finish parsing this clause **after** the initial token. 
+    fn parse_finish(stream: &mut TokenStream) -> ParseResult<Self>; 
+}
+impl<T> Peekable for T where T: Finishable { 
+    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
+        if stream.peek_for_terminal(Self::INITIAL_TOKEN)? { 
+            Ok(Some(T::parse_finish(stream)?))
+        } else { 
+            Ok(None) 
+        }
+    }
+}
+impl<T> Expectable for T where T: Finishable { 
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
+        stream.next()?.expect_terminal(Self::INITIAL_TOKEN)?; 
+        T::parse_finish(stream)
+    }
 }

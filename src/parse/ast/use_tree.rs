@@ -1,4 +1,6 @@
-use crate::parse::{lexer::TokenStream, ParseResult, tokens::{Punctuation, TokenKind, Terminal, Keyword}, ClauseResult, ClauseDelim};
+use crate::parse::tokens::Keyword;
+use crate::parse::{lexer::TokenStream, ParseResult, tokens::Punctuation};
+use crate::peek_match; 
 
 use super::Expectable;
 
@@ -14,113 +16,55 @@ pub enum UseTreeKind {
     Glob, 
 }
 
-/// A "use tree" - the part that comes right after the `use` keyword.
-/// 
 /// This is heavily inspired by `rustc_ast::ast::UseTree` 
 #[derive(PartialEq, Debug)]
 pub struct UseTree { 
     path: Vec<String>, 
     kind: UseTreeKind, 
 }
-
-fn pull_delim(stream: &mut TokenStream, result: UseTree) -> ClauseResult<UseTree> { 
-    let peek = stream.peek()?; 
-    match peek.as_punctuation() { 
-        Some(Punctuation::Comma) => { 
-            stream.next()?; 
-            Ok(( result, ClauseDelim::Continue ))
-        },
-        Some(Punctuation::BraceClose) => { 
-            stream.next()?; 
-            Ok(( result, ClauseDelim::Exit ))
-        },
-        _ => { 
-            Ok(( result, ClauseDelim::Unexpected(peek)))
-        }
-    }
-}
-
-impl UseTree { 
-
-    /// Parses a single clause within a Use Tree; 
-    /// it does this by grabbing tokens until it finds one that cannot be a part of the current clause.
-    /// 
-    /// The kind of token it stops at is indicated by the `UseDelim` in the returned tuple;
-    /// this way, calling functions can know what token it ends at and act accordingly,
-    /// since it works differently inside a nested Use Tree.  
-    fn parse_inner(stream: &mut TokenStream) -> ClauseResult<UseTree> { 
-        let mut path = Vec::<String>::new();
-        
+impl Expectable for UseTree { 
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
+        let mut path = Vec::<String>::new(); 
         loop { 
 
-            let first = stream.next()?; 
-            match first.kind { 
-                // First we have the simplest end-of-clause case - the glob
-                TokenKind::Punctuation(Punctuation::Glob) => return pull_delim(stream, UseTree{ path, kind: UseTreeKind::Glob }),
+            if let Some(ident) = stream.peek_for_identifier()? { 
+                path.push(ident); 
 
-                // If it's an open brace, things get fun.
-                // That means this is a nested use, so we recursively parse the next few clauses
-                TokenKind::Punctuation(Punctuation::BraceOpen) => { 
-                    let mut nested = Vec::<UseTree>::new(); 
-                    loop { 
-                        let (clause, delim) = Self::parse_inner(stream)?; 
-                        nested.push(clause);
-                        match delim { 
-                            ClauseDelim::Continue => continue, 
-                            ClauseDelim::Exit => { 
-                                let result = UseTree { path, kind: UseTreeKind::Nested(nested) };
-                                return pull_delim(stream, result);
-                            },
-                            ClauseDelim::Unexpected(t) => return Err(t.as_err_unexpected()),
+                if stream.peek_for_puncutation(Punctuation::PathSeparator)? { 
+                    continue
+                } 
+                else if stream.peek_for_keyword(Keyword::As)? { 
+                    let alias = stream.next()?.try_as_identifier()?; 
+                    return Ok(Self { path, kind: UseTreeKind::Alias(alias) })
+                }
+                else { 
+                    return Ok(Self { path, kind: UseTreeKind::Simple })
+                }
+            } 
+            else { 
+
+                let err_ref = stream.peek()?; 
+                peek_match!(stream.peek_for_puncutation { 
+                    Punctuation::Glob => return Ok(Self { path, kind: UseTreeKind::Glob }),
+                    Punctuation::BraceOpen => { 
+                        let mut nested = Vec::<Self>::new(); 
+                        loop { 
+                            nested.push(Self::parse_expect(stream)?);
+    
+                            let err_ref = stream.peek()?; 
+                            peek_match!(stream.peek_for_puncutation { 
+                                Punctuation::Comma => continue, 
+                                Punctuation::BraceClose => return Ok(Self { path, kind: UseTreeKind::Nested(nested) }), 
+                                _ => return Err(err_ref.as_err_unexpected())
+                            })
                         }
-                    }
+                    },
 
-                },
+                    _ => return Err(err_ref.as_err_unexpected())
+                })
 
-                // And here is the most common scenario. 
-                // We've probably found an identifier - add it to the `path` and see what comes next. 
-                TokenKind::Word(_) => { 
-
-                    path.push( first.try_as_identifier()? );
-                    
-                    let peek = stream.peek()?; 
-                    match peek.as_terminal() { 
-
-                        // If it's another `::`, continue the process
-                        Some(Terminal::Punctuation(Punctuation::PathSeparator)) => { 
-                            stream.next()?;
-                            continue 
-                        }
-
-                        // If it's an `as`, handle that junk, then terminate the clause
-                        Some(Terminal::Keyword(Keyword::PathAlias)) => { 
-                            stream.next()?; 
-                            let alias = stream.next()?.try_as_identifier()?; 
-                            
-                            let result = UseTree { 
-                                path, 
-                                kind: UseTreeKind::Alias(alias)
-                            };
-                            return pull_delim(stream, result);
-                        }
-
-                        // Otherwise, this is unexpected, terminate the clause
-                        _ => return pull_delim(stream, UseTree { path, kind: UseTreeKind::Simple }),
-                    }
-                },
-
-                // Otherwise, this is unexpected. 
-                _ => return Err(first.as_err_unexpected())
             }
         }
-    }
-
-}
-
-impl Expectable for UseTree { 
-    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> { 
-        let (clause, _) = Self::parse_inner(stream)?;
-        Ok(clause)
     }
 }
 
@@ -161,6 +105,13 @@ mod test {
 
         assert_keyword(&mut stream, Keyword::Use);
         assert_eof(&mut stream); 
+    }
+
+    #[test]
+    fn alias() { 
+        let (_, tree) = parse_use("use foo::bar as baz").unwrap();
+        assert_eq!(tree.path, vec![ "foo", "bar" ]);
+        assert!(matches!(tree.kind, UseTreeKind::Alias(s) if s == "baz"));
     }
 
     #[test]

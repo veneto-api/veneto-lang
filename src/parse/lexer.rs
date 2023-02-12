@@ -4,7 +4,7 @@ use std::str::FromStr;
 use std::{str::Chars, collections::VecDeque};
 
 use super::{ ParseResult, ParseErrorKind, ParseError };
-use super::tokens::{ Token, TokenKind, Position, Punctuation, Keyword };
+use super::tokens::{ Token, TokenKind, Position, Punctuation, Keyword, Terminal };
 
 #[allow(clippy::upper_case_acronyms)]
 enum Unit { 
@@ -453,4 +453,29 @@ impl<'a> TokenStream<'a> {
         }
     }
 
+    /// Peek the next token from the stream.
+    /// If it matches the provided terminal, advance the cursor and return `true`
+    /// Otherwise, return `false`.
+    pub fn peek_for_terminal(&mut self, expected: Terminal) -> ParseResult<bool> { 
+        match self.peek()?.as_terminal() { 
+            Some(x) if x == expected => { 
+                self.next()?;
+                Ok(true)
+            },
+            _ => Ok(false) 
+        }
+    }  
+    
+
+}
+
+#[macro_export]
+macro_rules! peek_match {
+    ($stream:ident.$fn:ident { $first:expr => $first_then:expr, $($other:expr => $other_then:expr),+ , _ => $else_then:expr }) => { 
+        if $stream.$fn($first)? { $first_then }
+        $(
+            else if $stream.$fn($other)? { $other_then }
+        )+
+        else { $else_then }
+    }
 }

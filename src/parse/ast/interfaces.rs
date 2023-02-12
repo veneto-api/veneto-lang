@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use strum_macros::{ Display, EnumString };
 
-use crate::parse::{lexer::TokenStream, ParseResult, tokens::Punctuation, ParseErrorKind};
+use crate::parse::{lexer::TokenStream, ParseResult, tokens::{Punctuation, Terminal}, ParseErrorKind};
 
 use super::{Peekable, Expectable}; 
 
@@ -42,71 +42,46 @@ impl Expectable for InterfaceExpression {
         }
     }
 }
+impl super::Finishable for InterfaceBody { 
+    const INITIAL_TOKEN: Terminal = Terminal::Punctuation(Punctuation::BraceOpen);
 
-pub fn finish_interface(stream: &mut TokenStream) -> ParseResult<InterfaceBody> { 
-    let mut fields = Vec::<InterfaceField>::new(); 
+    fn parse_finish(stream: &mut TokenStream) -> ParseResult<Self> {
+        let mut fields = Self::new(); 
+        loop { 
+            if let Some(name) = stream.peek_for_identifier()? { 
+                let optional = stream.peek_for_puncutation(Punctuation::Optional)?; 
+                stream.next()?.expect_punctuation(Punctuation::Colon)?; 
 
-    loop { 
-        let mut next = stream.next()?; 
+                let typ = stream.next()?;
+                let typ = typ
+                    .try_as_identifier()
+                    .and_then(|s| 
+                        InterfaceValueType::from_str(&s).map_err(|_| typ.as_err(ParseErrorKind::UnknownInterfaceValueType))
+                    )?;
 
-        if let Some(name) = next.as_identifier() { 
-            let mut optional = false;
-
-            if stream.peek()?.as_punctuation() == Some(Punctuation::Optional) { 
-                stream.next()?; 
-                optional = true;
+                fields.push(InterfaceField { name, typ, optional });
             }
 
-            stream.next()?.expect_punctuation(Punctuation::Colon)?; 
-
-            let typ = stream.next()?;
-            let typ = typ
-                .try_as_identifier()
-                .and_then(|s| 
-                    InterfaceValueType::from_str(&s).map_err(|_| typ.as_err(ParseErrorKind::UnknownInterfaceValueType))
-                )?;
-
-
-            fields.push(InterfaceField { name, typ, optional });
-            next = stream.next()?; 
+            let next = stream.next()?; 
+            match next.as_punctuation() { 
+                Some(Punctuation::Comma) => continue, 
+                Some(Punctuation::BraceClose) => return Ok(fields), 
+                _ => return Err(next.as_err_unexpected())
+    ,        }
         }
-
-        match next.as_punctuation() { 
-            Some(Punctuation::Comma) => continue, 
-            Some(Punctuation::BraceClose) => return Ok(fields), 
-            _ => return Err(next.as_err_unexpected())
-,        }
-    }
-}
-
-impl Peekable for InterfaceBody { 
-    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
-        if stream.peek_for_puncutation(Punctuation::BraceOpen)? { 
-            Ok(Some(finish_interface(stream)?))
-        }
-        else { 
-            Ok(None)
-        }
-    }
-}
-impl Expectable for InterfaceBody { 
-    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
-        stream.next()?.expect_punctuation(Punctuation::BraceOpen)?; 
-        finish_interface(stream)
     }
 }
 
 
 #[cfg(test)]
 mod test {
-    use crate::parse::{ParseResult, lexer::TokenStream, tokens::Punctuation};
+    use crate::parse::{ParseResult, lexer::TokenStream, ast::Expectable};
 
-    use super::{InterfaceBody, finish_interface, InterfaceField, InterfaceValueType};
+    use super::{InterfaceBody, InterfaceField, InterfaceValueType};
 
     fn parse_interface(input: &str) -> ParseResult<InterfaceBody> { 
         let mut stream = TokenStream::new(input.chars()); 
-        stream.next()?.expect_punctuation(Punctuation::BraceOpen)?;
-        finish_interface(&mut stream)
+        InterfaceBody::parse_expect(&mut stream)
     }
 
     fn assert_interface(input: &str, expected: InterfaceBody) { 
