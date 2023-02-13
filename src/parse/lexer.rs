@@ -394,6 +394,7 @@ impl<'a> TokenStream<'a> {
     }
 
     /// Pulls the next token from the stream, and advances the cursor.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> ParseResult<Token> { 
         match self.peeked.pop_front() { 
             Some(t) => Ok(t), 

@@ -1,14 +1,14 @@
 /// The lexer converts a raw stream of characters into a more practical format.
 /// 
 /// See https://veneto.notion.site/Lexing-rules-5cdd6b984898418cbeacd416158e5e81 for more information on how the lexer works.
-mod lexer;
+pub mod lexer;
 
 /// This module contains definitions for the tokens emitted by the `lexer`, 
 /// including terminal tokens like punctuation and keywords.  
 mod tokens;
 
 /// This contains the representation of the Abstract Syntax Tree emitted by the parser.
-mod ast;
+pub mod ast;
 
 #[cfg(test)]
 mod lexer_tests;

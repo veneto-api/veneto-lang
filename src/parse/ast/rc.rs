@@ -146,8 +146,8 @@ impl Peekable for ResourceClass {
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct RCIdentifier { 
-    base: String, 
-    generics: Vec<RCIdentifier>, 
+    pub base: String, 
+    pub generics: Vec<RCIdentifier>, 
     //TAG: RC_FLAGS
     // https://www.notion.so/veneto/RC-Flags-conditionals-c1ed70a794d14511b57e06d1798a62a8?pvs=4
 }
@@ -313,8 +313,8 @@ pub struct MethodInput {
 
 #[derive(Debug, PartialEq)]
 pub struct MethodOutput { 
-    status: Option<Number>, 
-    typ: Option<RCType>
+    pub status: Option<Number>, 
+    pub typ: Option<RCType>
 }
 
 type MethodOutputs = Vec<MethodOutput>;

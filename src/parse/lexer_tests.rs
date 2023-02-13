@@ -15,9 +15,6 @@ pub fn token_stream(str: &str) -> TokenStream {
 pub fn assert_identifier(stream: &mut TokenStream, val: &str) { 
     assert_eq!(stream.next().unwrap().as_identifier().unwrap(), val); 
 }
-pub fn assert_kind(stream: &mut TokenStream, kind: TokenKind) { 
-    assert_eq!(stream.next().unwrap().kind, kind); 
-}
 pub fn assert_eof(stream: &mut TokenStream) { 
     assert_eq!(stream.next().unwrap().kind, TokenKind::EOF); 
 }

@@ -18,7 +18,7 @@ pub struct Document {
     pub entry_points : Vec<EntryPoint>, 
 }
 impl Document { 
-    fn parse(mut stream: TokenStream) -> ParseResult<Self> { 
+    pub fn parse(mut stream: TokenStream) -> ParseResult<Self> { 
 
         let mut doc = Self { 
             imports: Vec::new(), 

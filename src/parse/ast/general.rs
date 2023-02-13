@@ -56,6 +56,7 @@ impl Finishable for GenericArgs {
 
 impl GenericIdentifier { 
     /// Helper function for unit tests
+    #[cfg(test)]
     pub(crate) fn simple(base: &'static str) -> Self { 
         Self { base: base.to_string(), args: GenericArgs::default() }
     }
