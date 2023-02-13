@@ -19,7 +19,7 @@ resource List<T>  {
 
             If empty, this is the final page of the list. 
         */
-		next ->? @self, 
+		next? -> @self, 
 	}
 
     /// Renders the current page of the list.

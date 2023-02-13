@@ -6,7 +6,7 @@ use crate::peek_match;
 use super::{Peekable, Expectable, Finishable};
 
 /// This is an identifier that can accept generic parameters.
-#[derive(PartialEq, Eq, Debug, Hash)]
+#[derive(PartialEq, Eq, Debug)]
 pub struct GenericIdentifier { 
     pub base: String, 
     pub args: GenericArgs,

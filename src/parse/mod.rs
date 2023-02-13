@@ -29,6 +29,8 @@ pub enum ParseErrorKind {
     ExpectedNumber, 
     ExpectedStringLiteral,
 
+    ExpectedTypeExpression,
+
     /// The lexer attempted to process a punctuation word that does not correspond to a valid `Punctuation` 
     UnrecognizedPunctuation(String),
 

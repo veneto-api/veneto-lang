@@ -8,7 +8,7 @@ use super::general::GenericIdentifier;
 
 use strum_macros::Display;
 
-#[derive(PartialEq, Display, Debug, Hash)]
+#[derive(PartialEq, Display, Debug)]
 pub enum TypeKind { 
     /// A reference to an existing type 
     Identifier(GenericIdentifier),
@@ -47,7 +47,7 @@ impl From<InnerTypeKind> for TypeKind {
 
 /// This represents a type expression - 
 /// that can be a reference to an existing type, or a new one. 
-#[derive(PartialEq, Debug, Hash)]
+#[derive(PartialEq, Debug)]
 pub struct Type { 
     pub kind: TypeKind, 
     
@@ -87,22 +87,23 @@ impl Type {
         }
     }
 
-    fn begin_kind(stream: &mut TokenStream) -> ParseResult<InnerTypeKind> { 
+    fn begin_peek(stream: &mut TokenStream) -> ParseResult<Option<InnerTypeKind>> { 
         if let Some(str) = StructBody::parse_peek(stream)? { 
-            Ok(InnerTypeKind::Struct(str))
+            Ok(Some(InnerTypeKind::Struct(str)))
         }
         else if let Some(tuple) = Tuple::parse_peek(stream)? { 
-            Ok(InnerTypeKind::Tuple(tuple))
+            Ok(Some(InnerTypeKind::Tuple(tuple)))
+        }
+        else if let Some(gid) = GenericIdentifier::parse_peek(stream)? { 
+            Ok(Some(InnerTypeKind::Identifier(gid)))
         }
         else { 
-            GenericIdentifier::parse_expect(stream).map(InnerTypeKind::Identifier)
+            Ok(None) 
         }
     }
-}
 
-impl Expectable for Type { 
-    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> { 
-        let mut typ = Self::from_inner_kind(Self::begin_kind(stream)?);
+    fn finish(inner_kind: InnerTypeKind, stream: &mut TokenStream) -> ParseResult<Self> { 
+        let mut typ = Self::from_inner_kind(inner_kind);
 
         loop { 
             let err_ref = stream.peek()?; 
@@ -144,6 +145,25 @@ impl Expectable for Type {
     }
 }
 
+impl Peekable for Type { 
+    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
+        if let Some(inner_kind) = Self::begin_peek(stream)? { 
+            Ok(Some(Self::finish(inner_kind, stream)?))
+        } else { 
+            Ok(None)
+        }
+    }
+}
+impl Expectable for Type { 
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
+        let err_ref = stream.peek()?; 
+        if let Some(inner_kind) = Self::begin_peek(stream)? { 
+            Self::finish(inner_kind, stream)
+        } else { 
+            Err(err_ref.as_err(ParseErrorKind::ExpectedTypeExpression))
+        }
+    }
+}
 
 //
 // Struct literals
@@ -154,7 +174,7 @@ impl Expectable for Type {
 pub type StructBody = Vec<StructField>;
 
 /// This is an individual field declaration within a `Struct`
-#[derive(PartialEq, Debug, Hash)]
+#[derive(PartialEq, Debug)]
 pub struct StructField { 
     pub name: String, 
     /// This is the field's type, 

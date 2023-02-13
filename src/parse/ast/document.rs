@@ -4,10 +4,10 @@ use crate::parse::{lexer::TokenStream, ParseResult, tokens::{Keyword, Punctuatio
 
 use super::{types::Type, rc::{RCIdentifier, ResourceClass}, interfaces::InterfaceExpression, use_tree::UseTree, Expectable, Peekable};
 
-
+#[allow(dead_code)]
 pub struct EntryPoint { 
-    uri: String, 
-    rc: RCIdentifier, 
+    pub uri: String, 
+    pub rc: RCIdentifier, 
 }
 
 pub struct Document { 

@@ -197,7 +197,7 @@ pub type LinksBlock = Vec<Link>;
 pub struct Link { 
     pub rel: String, 
     pub optional: bool, 
-    pub typ: RCIdentifier,
+    pub typ: RCReference,
     //TAG: DYNAMIC_LINKS
     // That sum type would go here
     // https://veneto.notion.site/Custom-dynamic-link-serialization-957c6c655cc44cddada94a490663cebc
@@ -215,7 +215,7 @@ impl Peekable for Link {
             Ok(Some(Link { 
                 rel, 
                 optional, 
-                typ: RCIdentifier::parse_expect(stream)?,
+                typ: RCReference::parse_expect(stream)?,
             }))
         }
         else { Ok(None) }
@@ -253,7 +253,7 @@ impl Expectable for LinksBlock {
 // Methods
 // 
 
-#[derive(EnumString, Debug, Display, PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(EnumString, Debug, Display, PartialEq, Eq, Clone, Copy)]
 #[strum(serialize_all="UPPERCASE")]
 pub enum MethodName { 
     Get, 
@@ -307,8 +307,8 @@ type Methods = Vec<Method>;
 
 #[derive(Debug, PartialEq)]
 pub struct MethodInput { 
-    typ: RCType, 
-    lax: bool, 
+    pub typ: RCType, 
+    pub lax: bool, 
 }
 
 #[derive(Debug, PartialEq)]
@@ -324,77 +324,47 @@ impl Expectable for Method {
     fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
         let name = MethodName::parse_expect(stream)?;
 
-        // First, check for input type
-        // Types can't be peeked, so we have to use other context to determine whether or not to expect one 
-        // If there's not an arrow yet, expect the input type, then expect an arrow or semicolon afterwards
-        let mut input : Option<MethodInput> = None;
-        if !stream.peek_for_puncutation(Punctuation::Arrow)? { 
-
+        let mut input : Option<MethodInput> = None; 
+        if let Some(typ) = RCType::parse_peek(stream)? { 
             let err_ref = stream.peek()?; 
-            let typ = RCType::parse_expect(stream)?;
-
             if [ MethodName::Get, MethodName::Delete ].contains(&name) { 
                 return Err(err_ref.as_semantic_error("This request type cannot have a request body"))
             }
 
-            input = Some(MethodInput { 
-                typ, 
-                lax: stream.peek_for_puncutation(Punctuation::Lax)?,
-            });
+            let lax = stream.peek_for_puncutation(Punctuation::Lax)?; 
 
-            let next = stream.next()?;
-            match next.as_punctuation() { 
-                Some(Punctuation::Arrow) => (), // If it's an arrow, continue on below 
-                Some(Punctuation::Semicolon) => { 
-                    // If it's a semicolon, we're done here
-                    return Ok(Method { name, input, outputs: MethodOutputs::new() })
-                },
-                _ => return Err(next.as_err_unexpected())
-            }
+            input = Some(MethodInput { typ, lax });
         }
 
+        let mut outputs = Vec::<MethodOutput>::new(); 
+        if stream.peek_for_puncutation(Punctuation::Arrow)? { 
+            loop { 
+                let mut status : Option<Number> = None; 
+                let err_ref = stream.peek()?; 
+                if stream.peek_for_puncutation(Punctuation::HttpStatus)? { 
+                    status = Some(stream.next()?.try_as_number()?);
+                }
 
-        // Now let's handle outputs 
-        // We expect them to be here because it's guaranteed above 
-        let mut outputs = MethodOutputs::new(); 
+                if outputs.iter().any(|other| other.status == status) { 
+                    return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
+                }
 
-        loop { 
-            // First check for a status.  
-            // This is easy since we can just peek for it 
-            let mut status : Option<Number> = None; 
-            if stream.peek_for_puncutation(Punctuation::HttpStatus)? { 
-                status = Some(stream.next()?.try_as_number()?);
-            }
+                let typ = RCType::parse_peek(stream)?; 
+                outputs.push(MethodOutput { status, typ });
 
-            // Now we have to handle types again, which can't be peeked.  Same deal
-            let mut typ : Option<RCType> = None; 
-            let peek = stream.peek()?; 
-            if !(
-                peek.as_punctuation() == Some(Punctuation::Comma) || 
-                peek.as_punctuation() == Some(Punctuation::Semicolon)
-            ){ 
-                // If there's not an end-of-clause marker (comma or semicolon), expect the type 
-                typ = Some(RCType::parse_expect(stream)?); 
-            }
-            else if status.is_none() { 
-                // Otherwise, there is no type.
-                // However, we have to raise this semantic error if there's no status either
-                return Err(peek.as_semantic_error("Method outputs must have a status and/or a type"))
-            }
-
-            if outputs.iter().any(|other| other.status == status) { 
-                return Err(peek.as_err(ParseErrorKind::SemanticDuplicate))
-            }
-            outputs.push(MethodOutput { status, typ });
-
-
-            let next = stream.next()?; 
-            match next.as_punctuation() { 
-                Some(Punctuation::Comma) => continue,
-                Some(Punctuation::Semicolon) => return Ok(Method { name, input, outputs }),
-                _ => return Err(next.as_err_unexpected())
+                let next = stream.next()?; 
+                match next.as_punctuation() { 
+                    Some(Punctuation::Comma) => continue,
+                    Some(Punctuation::Semicolon) => break,
+                    _ => return Err(next.as_err_unexpected())
+                }
             }
         }
+        else { 
+            stream.next()?.expect_punctuation(Punctuation::Semicolon)?;
+        }
+
+        Ok(Method { name, input, outputs })
         
     }
 }
@@ -406,7 +376,7 @@ impl Expectable for Method {
 /// These are the spcecial types usable within resource classes
 /// 
 /// https://veneto.notion.site/Special-data-types-d8aab2afcd4d480b988c4b9ec23ec950
-#[derive(EnumString, Debug, Display, PartialEq, Eq, Hash)]
+#[derive(EnumString, Debug, Display, PartialEq, Eq)]
 #[strum(serialize_all="lowercase")]
 pub enum SpecialType { 
     #[strum(serialize="self")]
@@ -423,20 +393,14 @@ impl Expectable for SpecialType {
 }
 
 /// This represents a type expression within the context of a resource class;
-/// it contains a normal type or an `RCSpecialType`.
-/// 
-/// This is not `Peekable` because `Type` is not `Peekable`!
-/// That's mainly because there's lots of different token types that can mark the beginning of a `Type` - 
-/// it could, in theory, be possible to implement `Peekable for Type` but that introduces a lot of room for error.
-/// It's better to just work our way around that as long as it's feasible to do so
-#[derive(Debug, PartialEq, Hash)]
+/// it contains a normal type or an `RCReference`.  
+#[derive(Debug, PartialEq)]
 pub enum RCType { 
     Normal(Type),
     Special(SpecialType), 
     //TAG: RC_FLAGS
     // When we add RC flags, `Normal` may have to be changed
 }
-
 impl Expectable for RCType { 
     fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
         if stream.peek_for_puncutation(Punctuation::SpecialType)? { 
@@ -444,6 +408,38 @@ impl Expectable for RCType {
         } 
         else { 
             Type::parse_expect(stream).map(RCType::Normal)
+        }
+    }
+}
+impl Peekable for RCType { 
+    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
+        if stream.peek_for_puncutation(Punctuation::SpecialType)? { 
+            SpecialType::parse_expect(stream).map(|t| Some(RCType::Special(t)))
+        } 
+        else if let Some(typ) = Type::parse_peek(stream)? { 
+            Ok(Some(RCType::Normal(typ)))
+        }
+        else { 
+            Ok(None) 
+        }
+    }
+}
+
+/// This is a reference to an RC;
+/// either an identifier or a Special Type.  
+/// 
+/// 
+#[derive(Debug, PartialEq, Eq)]
+pub enum RCReference { 
+    Normal(RCIdentifier),
+    Special(SpecialType)
+}
+impl Expectable for RCReference { 
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
+        if stream.peek_for_puncutation(Punctuation::SpecialType)? { 
+            SpecialType::parse_expect(stream).map(Self::Special)
+        } else {
+            RCIdentifier::parse_expect(stream).map(Self::Normal)
         }
     }
 }
@@ -461,7 +457,7 @@ mod test {
     use crate::parse::{ParseResult, ParseErrorKind};
     use crate::parse::ast::{Expectable, Peekable};
 
-    use super::{Method, RCType, MethodInput, MethodName, SpecialType, LinksBlock, Link, RCIdentifier, ResourceClass, RCDeclaration, MethodOutput};
+    use super::{Method, RCType, MethodInput, MethodName, SpecialType, LinksBlock, Link, RCIdentifier, ResourceClass, RCDeclaration, MethodOutput, RCReference};
 
     fn parse_method(input: &str) -> ParseResult<Method> { 
         let mut stream = token_stream(input); 
@@ -482,6 +478,15 @@ mod test {
     //
     // Methods
     //
+
+    #[test]
+    fn method_empty() { 
+        assert_method("DELETE;", Method { 
+            name: MethodName::Delete, 
+            input: None, 
+            outputs: vec![], 
+        })
+    }
 
     #[test]
     fn method_complete() { 
@@ -618,9 +623,20 @@ mod test {
             Link { 
                 rel: "foo".to_string(), 
                 optional: false, 
-                typ: RCIdentifier { base: "bar".to_string(), generics: vec![] }
+                typ: RCReference::Normal(RCIdentifier { base: "bar".to_string(), generics: vec![] })
             }
         ]);
+    }
+
+    #[test]
+    fn links_special() { 
+        assert_links("{ foo? -> @self }", vec![ 
+            Link { 
+                rel: "foo".to_string(), 
+                optional: true, 
+                typ: RCReference::Special(SpecialType::RCSelf),
+            }
+        ])
     }
 
     #[test]
@@ -629,12 +645,12 @@ mod test {
             Link { 
                 rel: "bar".to_string(),
                 optional: false, 
-                typ: RCIdentifier { base: "foo".to_string(), generics: vec![] }
+                typ: RCReference::Normal(RCIdentifier { base: "foo".to_string(), generics: vec![] })
             },
             Link { 
                 rel: "baz".to_string(), 
                 optional: true, 
-                typ: RCIdentifier { base: "optional".to_string(), generics: vec![] }
+                typ: RCReference::Normal(RCIdentifier { base: "optional".to_string(), generics: vec![] })
             }
         ]);
     }
@@ -645,13 +661,13 @@ mod test {
             Link { 
                 rel: "baz".to_string(), 
                 optional: false, 
-                typ: RCIdentifier { 
+                typ: RCReference::Normal(RCIdentifier { 
                     base: "foo".to_string(), 
                     generics: vec![ RCIdentifier { 
                         base: "bar".to_string(), 
                         generics: vec![] 
                     } ] 
-                }
+                })
             }
         ]);
     }
@@ -706,10 +722,10 @@ mod test {
                 Link { 
                     rel: "bar".to_string(),  
                     optional: false, 
-                    typ: RCIdentifier { 
+                    typ: RCReference::Normal(RCIdentifier { 
                         base: "baz".to_string(), 
                         generics: vec![], 
-                    }
+                    })
                 }
             ]), 
 
