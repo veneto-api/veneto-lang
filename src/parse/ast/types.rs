@@ -143,6 +143,26 @@ impl Type {
             })
         }
     }
+
+
+    /// This returns `true` only if `self` is an identifier or a composite type that ultimately only contains identifiers.
+    /// 
+    /// This is necessary when validating embedded resources, as non-Resource data is not allowed.  
+    pub fn validate_ident_composite(&self) -> bool { 
+        true 
+
+        // We've got to actually implement this!
+        // In order to do that, we need to know what is or isn't an RC reference
+        //TAG: RC_REFERENCE_SYNTAX
+        // https://veneto.notion.site/Maybe-we-need-a-special-syntax-for-RC-references-c913241025c740f387a7cd45d40672db 
+
+        // match &self.kind { 
+        //     TypeKind::Identifier(_) => true, 
+        //     TypeKind::Array(inner) => inner.validate_ident_composite(), 
+        //     TypeKind::Struct(fields) => fields.iter().all(|field| field.typ.validate_ident_composite()),
+        //     _ => false, 
+        // }
+    }
 }
 
 impl Peekable for Type { 

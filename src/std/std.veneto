@@ -1,6 +1,6 @@
 
 resource Ref<T> { 
-	data T
+	embed T
 	
 	/// GET is not mandatory for this type
 	GET -> #405;
@@ -11,7 +11,7 @@ resource Ref<T> {
 
 resource List<T>  {
 
-	data Ref<T>[]
+	embed Ref<T>[]
 
 	links { 
         /**

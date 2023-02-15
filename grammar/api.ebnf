@@ -41,12 +41,7 @@ rc_flags        = never;
 *)
 rc_declaration = 'resource' rc_ident; 
 
-(* 
-    This is a type used in an RC; 
-    it can be a reference to another RC or a normal data type 
-*)
 
-rc_type = rc_reference | type; 
 
 (* 
     -- ----
@@ -58,11 +53,15 @@ rc_body = [{ rc_data | rc_interface | rc_links | rc_method }] ;
 
 (* Special grammar *)
 rc_reference =  '@empty' | '@media' | '@self' | rc_ident ;
-rc_data = rc_type ; 
-
+(* 
+    This is a type used in an RC; 
+    it can be a reference to another RC or a normal data type 
+*)
+rc_type = rc_reference | type; 
 
 
 rc_data = 'data' type ;
+rc_embed = 'embed' type; 
 rc_interface = 'interface' (identifier | interface_block) ; 
 
 

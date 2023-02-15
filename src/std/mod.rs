@@ -36,14 +36,17 @@ mod test {
                     }
                  ]
             }),
-            data: Some(Type { 
+            
+            data: None, 
+            embed: Some(Type { 
                 kind: TypeKind::Identifier(GenericIdentifier::simple("T")),
                 optional: false, 
                 in_plus: None, 
                 out_plus: None, 
             }),
+
             interface: None, 
-            links: None, 
+            links: vec![], 
 
             methods: vec![ 
                 Method { 
@@ -76,7 +79,8 @@ mod test {
                 ]
             }),
 
-            data: Some(Type { 
+            data: None, 
+            embed: Some(Type { 
                 kind: TypeKind::Array(Box::new(Type { 
                     kind: TypeKind::Identifier(GenericIdentifier { 
                         base: "Ref".to_string(), 
@@ -97,13 +101,13 @@ mod test {
             }), 
 
             interface: None, 
-            links: Some(vec![ 
+            links: vec![ 
                 Link { 
                     rel: "next".to_string(), 
                     optional: true, 
                     typ: RCReference::Special(SpecialType::RCSelf),
                 }
-            ]),
+            ],
 
             methods: vec![ 
                 Method { 
@@ -144,8 +148,10 @@ mod test {
                 generics: vec![], 
             }), 
             data: None, 
+            embed: None, 
             interface: None, 
-            links: None, 
+
+            links: vec![], 
             methods: vec![ 
                 Method { 
                     name: MethodName::Get, 
@@ -175,8 +181,10 @@ mod test {
                 generics: vec![],
             }), 
             data: None, 
+            embed: None, 
             interface: None, 
-            links: None, 
+
+            links: vec![], 
             methods: vec![
                 Method { 
                     name: MethodName::Post, 

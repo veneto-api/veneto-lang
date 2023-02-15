@@ -298,6 +298,7 @@ pub enum Keyword {
     // in resource classes
     Extends, 
     Data,
+    Embed, 
     Links, 
     // (interface already defined) 
 }

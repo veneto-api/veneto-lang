@@ -41,10 +41,13 @@ pub struct ResourceClass {
     /// (This cannot be a reference to another RC at this time)
     pub data : Option<Type>, 
 
+    /// THe embedded data type, declared with the `embed` keyword
+    pub embed : Option<Type>, 
+
     /// The interface expresssion (reference or literal) declared for this RC
     pub interface : Option<InterfaceExpression>,
 
-    pub links : Option<LinksBlock>,
+    pub links : LinksBlock,
 
     pub methods : Methods,
 }
@@ -82,6 +85,7 @@ impl Peekable for ResourceClass {
             };
 
             let mut data : Option<Type> = None; 
+            let mut embed : Option<Type> = None; 
             let mut interface : Option<InterfaceExpression> = None;
             let mut links : Option<LinksBlock> = None; 
             let mut methods = Methods::new(); 
@@ -89,20 +93,41 @@ impl Peekable for ResourceClass {
             stream.next()?.expect_punctuation(Punctuation::BraceOpen)?; 
             loop { 
 
+                let err_ref = stream.peek()?; 
                 if stream.peek_for_keyword(Keyword::Data)? { 
+                    if data.is_some() { 
+                        return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
+                    }
                     data = Some(Type::parse_expect(stream)?);
                 }
+                else if stream.peek_for_keyword(Keyword::Embed)? { 
+                    if embed.is_some() { 
+                        return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
+                    }
+
+                    let typ = Type::parse_expect(stream)?; 
+
+                    if !typ.validate_ident_composite() { 
+                        return Err(err_ref.as_semantic_error("Embedded resources can only contain references to other resources"))
+                    }
+                    embed = Some(typ);
+                }
                 else if stream.peek_for_keyword(Keyword::Interface)? { 
+                    if interface.is_some() { 
+                        return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
+                    }
                     interface = Some(InterfaceExpression::parse_expect(stream)?);
                 }
                 else if stream.peek_for_keyword(Keyword::Links)? { 
+                    if links.is_some() { 
+                        return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
+                    }
                     links = Some(LinksBlock::parse_expect(stream)?);
                 }
                 else if stream.peek_for_puncutation(Punctuation::BraceClose)? { 
                     break
                 }
                 else { 
-                    let err_ref = stream.peek()?; 
                     let method = Method::parse_expect(stream)?; 
 
                     // Bonus check for implied duplicate method names
@@ -131,7 +156,10 @@ impl Peekable for ResourceClass {
 
             }
 
-            Ok(Some(ResourceClass { declaration, data, interface, links, methods }))
+            Ok(Some(ResourceClass { 
+                declaration, data, embed, interface, methods,
+                links: links.unwrap_or_default(),
+            }))
         }
         else { Ok(None) }
     }
@@ -715,10 +743,11 @@ mod test {
                     make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("int")))
                 ))
             )),
+            embed: None, 
 
             interface: Some(InterfaceExpression::Identifier("Queryable".to_string())),
 
-            links: Some(vec![ 
+            links: vec![ 
                 Link { 
                     rel: "bar".to_string(),  
                     optional: false, 
@@ -727,7 +756,7 @@ mod test {
                         generics: vec![], 
                     })
                 }
-            ]), 
+            ], 
 
             methods: vec![
                 Method { 
@@ -762,8 +791,9 @@ mod test {
             }),
 
             data: None, 
+            embed: None, 
             interface: None, 
-            links: None, 
+            links: vec![], 
             methods: vec![], 
         });
     }
@@ -782,8 +812,9 @@ mod test {
             ),
 
             data: None, 
+            embed: None, 
             interface: None, 
-            links: None, 
+            links: vec![], 
             methods: vec![], 
         })
     }
@@ -829,6 +860,8 @@ mod test {
                     ]))
                 )))),
 
+                embed: None, 
+
                 interface: Some(InterfaceExpression::Literal(vec![ 
                     InterfaceField { 
                         name: "q".to_string(), 
@@ -837,7 +870,30 @@ mod test {
                     }
                 ])),
 
-                links: None, 
+                links: vec![], 
+                methods: vec![],
+            }
+        )
+    }
+
+    #[test]
+    fn rc_embed() { 
+        assert_rc(
+            "resource Embedder { 
+                embed { foo: Bar }
+            }", 
+            ResourceClass { 
+                declaration: RCDeclaration::Basic(RCIdentifier { base: "Embedder".to_string(), generics: vec![] }),
+                data: None, 
+                embed: Some(make_simple_type(TypeKind::Struct(vec![ 
+                    StructField { 
+                        name: "foo".to_string(), 
+                        typ: make_simple_type(TypeKind::Identifier(GenericIdentifier { base: "Bar".to_string(), args: vec![] }))
+                    }
+                ]))),
+
+                interface: None, 
+                links: vec![], 
                 methods: vec![],
             }
         )
