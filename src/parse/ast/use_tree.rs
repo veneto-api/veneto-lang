@@ -30,7 +30,7 @@ impl Expectable for UseTree {
             if let Some(ident) = stream.peek_for_identifier()? { 
                 path.push(ident); 
 
-                if stream.peek_for_puncutation(Punctuation::PathSeparator)? { 
+                if stream.peek_for_punctuation(Punctuation::PathSeparator)? { 
                     continue
                 } 
                 else if stream.peek_for_keyword(Keyword::As)? { 
@@ -44,7 +44,7 @@ impl Expectable for UseTree {
             else { 
 
                 let err_ref = stream.peek()?; 
-                peek_match!(stream.peek_for_puncutation { 
+                peek_match!(stream.peek_for_punctuation { 
                     Punctuation::Glob => return Ok(Self { path, kind: UseTreeKind::Glob }),
                     Punctuation::BraceOpen => { 
                         let mut nested = Vec::<Self>::new(); 
@@ -52,7 +52,7 @@ impl Expectable for UseTree {
                             nested.push(Self::parse_expect(stream)?);
     
                             let err_ref = stream.peek()?; 
-                            peek_match!(stream.peek_for_puncutation { 
+                            peek_match!(stream.peek_for_punctuation { 
                                 Punctuation::Comma => continue, 
                                 Punctuation::BraceClose => return Ok(Self { path, kind: UseTreeKind::Nested(nested) }), 
                                 _ => return Err(err_ref.as_err_unexpected())

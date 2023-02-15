@@ -45,7 +45,7 @@ impl Finishable for GenericArgs {
                 args.push(arg);
             }
 
-            peek_match!(stream.peek_for_puncutation { 
+            peek_match!(stream.peek_for_punctuation { 
                 Punctuation::Comma => continue,
                 Punctuation::GenericClose => return Ok(args), 
                 _ => return Err(stream.next()?.as_err_unexpected())

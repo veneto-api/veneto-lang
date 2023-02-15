@@ -49,7 +49,7 @@ impl super::Finishable for InterfaceBody {
         let mut fields = Self::new(); 
         loop { 
             if let Some(name) = stream.peek_for_identifier()? { 
-                let optional = stream.peek_for_puncutation(Punctuation::Optional)?; 
+                let optional = stream.peek_for_punctuation(Punctuation::Optional)?; 
                 stream.next()?.expect_punctuation(Punctuation::Colon)?; 
 
                 let typ = stream.next()?;

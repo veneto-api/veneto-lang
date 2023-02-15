@@ -124,7 +124,7 @@ impl Peekable for ResourceClass {
                     }
                     links = Some(LinksBlock::parse_expect(stream)?);
                 }
-                else if stream.peek_for_puncutation(Punctuation::BraceClose)? { 
+                else if stream.peek_for_punctuation(Punctuation::BraceClose)? { 
                     break
                 }
                 else { 
@@ -235,7 +235,7 @@ impl Peekable for Link {
     fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
         if let Some(rel) = stream.peek_for_identifier()? { 
 
-            let optional = stream.peek_for_puncutation(Punctuation::Optional)?; 
+            let optional = stream.peek_for_punctuation(Punctuation::Optional)?; 
 
             //TAG: DYNAMIC_LINKS
             stream.next()?.expect_punctuation(Punctuation::Arrow)?; 
@@ -359,17 +359,17 @@ impl Expectable for Method {
                 return Err(err_ref.as_semantic_error("This request type cannot have a request body"))
             }
 
-            let lax = stream.peek_for_puncutation(Punctuation::Lax)?; 
+            let lax = stream.peek_for_punctuation(Punctuation::Lax)?; 
 
             input = Some(MethodInput { typ, lax });
         }
 
         let mut outputs = Vec::<MethodOutput>::new(); 
-        if stream.peek_for_puncutation(Punctuation::Arrow)? { 
+        if stream.peek_for_punctuation(Punctuation::Arrow)? { 
             loop { 
                 let mut status : Option<Number> = None; 
                 let err_ref = stream.peek()?; 
-                if stream.peek_for_puncutation(Punctuation::HttpStatus)? { 
+                if stream.peek_for_punctuation(Punctuation::HttpStatus)? { 
                     status = Some(stream.next()?.try_as_number()?);
                 }
 
@@ -431,7 +431,7 @@ pub enum RCType {
 }
 impl Expectable for RCType { 
     fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
-        if stream.peek_for_puncutation(Punctuation::SpecialType)? { 
+        if stream.peek_for_punctuation(Punctuation::SpecialType)? { 
             SpecialType::parse_expect(stream).map(RCType::Special)
         } 
         else { 
@@ -441,7 +441,7 @@ impl Expectable for RCType {
 }
 impl Peekable for RCType { 
     fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
-        if stream.peek_for_puncutation(Punctuation::SpecialType)? { 
+        if stream.peek_for_punctuation(Punctuation::SpecialType)? { 
             SpecialType::parse_expect(stream).map(|t| Some(RCType::Special(t)))
         } 
         else if let Some(typ) = Type::parse_peek(stream)? { 
@@ -464,7 +464,7 @@ pub enum RCReference {
 }
 impl Expectable for RCReference { 
     fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
-        if stream.peek_for_puncutation(Punctuation::SpecialType)? { 
+        if stream.peek_for_punctuation(Punctuation::SpecialType)? { 
             SpecialType::parse_expect(stream).map(Self::Special)
         } else {
             RCIdentifier::parse_expect(stream).map(Self::Normal)

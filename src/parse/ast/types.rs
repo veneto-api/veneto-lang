@@ -207,7 +207,7 @@ impl Finishable for StructBody {
     fn parse_finish(stream: &mut TokenStream) -> ParseResult<Self> {
         let mut fields = Self::new(); 
         loop { 
-            peek_match!(stream.peek_for_puncutation { 
+            peek_match!(stream.peek_for_punctuation { 
                 Punctuation::Comma => continue, 
                 Punctuation::BraceClose => return Ok(fields),
                 _ => { 
@@ -245,12 +245,12 @@ impl Expectable for StructField {
 type Tuple = Vec<Type>; 
 impl Peekable for Tuple { 
     fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
-        if stream.peek_for_puncutation(Punctuation::BracketOpen)? { 
+        if stream.peek_for_punctuation(Punctuation::BracketOpen)? { 
 
             let mut types = Self::new(); 
             loop { 
 
-                peek_match!(stream.peek_for_puncutation { 
+                peek_match!(stream.peek_for_punctuation { 
                     Punctuation::BracketClose => return Ok(Some(types)),
                     Punctuation::Comma => continue, 
                     _ => types.push( Type::parse_expect(stream)? )
