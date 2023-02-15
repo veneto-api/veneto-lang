@@ -1,13 +1,28 @@
+
+use crate::parse::{ ParseResult, lexer::TokenStream } ;
+use crate::parse::ast::document::Document;
+
+pub fn parse_std() -> ParseResult<Document> { 
+    let stream = TokenStream::new( include_str!("std.veneto").chars() ); 
+    Document::parse(stream)
+
+}
+
+lazy_static! { 
+    static ref STD : ParseResult<Document> = parse_std(); 
+}
+
 #[cfg(test)]
 mod test { 
-    use crate::STD;
+
+
     use crate::parse::ast::general::GenericIdentifier;
     use crate::parse::ast::rc::{ResourceClass, RCDeclaration, RCIdentifier, Method, MethodName, MethodOutput, Link, RCReference, SpecialType, MethodInput, RCType};
     use crate::parse::ast::types::{Type, TypeKind}; 
 
     #[test]
     fn test_std() { 
-        let doc = STD.as_ref().unwrap(); 
+        let doc = super::STD.as_ref().unwrap(); 
         let mut rcs = doc.resource_classes.iter(); 
 
         // Ref<T>
