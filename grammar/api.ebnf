@@ -42,6 +42,9 @@ rc_flags        = never;
 rc_declaration = 'resource' rc_ident; 
 
 
+rc_metaclass =  '@empty' | '@media' | '@self';
+rc_type_expression = rc_metaclass | type; 
+
 
 (* 
     -- ----
@@ -51,13 +54,6 @@ rc_declaration = 'resource' rc_ident;
 rc_body = [{ rc_data | rc_interface | rc_links | rc_method }] ;
 (* SEMANTICS: Only one of each.  It's just like this so it can be in any order *)
 
-(* Special grammar *)
-rc_reference =  '@empty' | '@media' | '@self' | rc_ident ;
-(* 
-    This is a type used in an RC; 
-    it can be a reference to another RC or a normal data type 
-*)
-rc_type = rc_reference | type; 
 
 
 rc_data = 'data' type ;

@@ -19,12 +19,12 @@ use super::{Expectable, types::Type, interfaces::InterfaceExpression, Peekable};
 #[derive(Debug, PartialEq, Eq)]
 pub enum RCDeclaration { 
     /// A non-extended Resource Class, which may have parameters
-    Basic(RCIdentifier), 
+    Basic(GenericIdentifier), 
 
     /// An extended resource class;
     /// the `String` is its identifier (it may not have parameters),
-    /// the `RCIdentifier` references the extended RC (it may have parameters),
-    Extended(String, RCIdentifier), 
+    /// the `GenericIdentifier` references the extended RC (it may have parameters),
+    Extended(String, GenericIdentifier), 
 }
 
 
@@ -68,7 +68,7 @@ impl Peekable for ResourceClass {
         if stream.peek_for_keyword(Keyword::Resource)? { 
  
             let declaration = { 
-                let ident = RCIdentifier::parse_expect(stream)?; 
+                let ident = GenericIdentifier::parse_expect(stream)?; 
 
                 if stream.peek_for_keyword(Keyword::Extends)? { 
 
@@ -77,7 +77,7 @@ impl Peekable for ResourceClass {
                         return Err(err_ref.as_semantic_error("Resource classes cannot have modifiers if they are extended"))
                     }
                     else { 
-                        RCDeclaration::Extended(ident.base, RCIdentifier::parse_expect(stream)?)
+                        RCDeclaration::Extended(ident.base, GenericIdentifier::parse_expect(stream)?)
                     }
     
                 }
@@ -172,42 +172,79 @@ impl Peekable for ResourceClass {
 // Identifiers
 //
 
-#[derive(PartialEq, Eq, Debug)]
-pub struct RCIdentifier { 
-    pub base: String, 
-    pub generics: Vec<RCIdentifier>, 
-    //TAG: RC_FLAGS
-    // https://www.notion.so/veneto/RC-Flags-conditionals-c1ed70a794d14511b57e06d1798a62a8?pvs=4
-}
-impl RCIdentifier { 
-    fn has_modifiers(&self) -> bool { 
-        //TAG: RC_FLAGS 
-        !self.generics.is_empty()
-    }
-}
-impl From<RCIdentifier> for GenericIdentifier { 
-    fn from(ident: RCIdentifier) -> Self {
-        GenericIdentifier { 
-            base: ident.base, 
-            args: ident.generics.into_iter().map(GenericIdentifier::from).collect(),
-        }
-    }
-}
-impl Expectable for RCIdentifier { 
-    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
-        
-        //TAG: RC_FLAGS 
-        // Until we add flags, this is just the same as a `GenericIdentifier`, so we just convert it here 
-        fn convert(gid: GenericIdentifier) -> RCIdentifier { 
-            RCIdentifier { 
-                base: gid.base, 
-                generics: gid.args.into_iter().map(convert).collect(),
-            }
-        }
 
-        Ok(convert(GenericIdentifier::parse_expect(stream)?))
+/// These are the spcecial types usable within resource classes.
+/// 
+/// See https://veneto.notion.site/Resource-Class-a0ef96008d83457e99590b35270affeb
+#[derive(EnumString, Debug, Display, PartialEq, Eq)]
+#[strum(serialize_all="lowercase")]
+pub enum Metaclass { 
+    #[strum(serialize="self")]
+    RCSelf, 
+    Media,
+    Empty, 
+}
+
+impl Expectable for Metaclass { 
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
+        let next = stream.next()?;
+        Metaclass::from_str(&next.try_as_identifier()?).map_err(|_| next.as_err(ParseErrorKind::UnknownSpecialType))
     }
 }
+
+/// This represents a type expression within the context of a resource class;
+/// it contains a normal type or an `RCReference`.  
+#[derive(Debug, PartialEq)]
+pub enum RCType { 
+    Normal(Type),
+    Special(Metaclass), 
+    //TAG: RC_FLAGS
+    // When we add RC flags, `Normal` may have to be changed
+}
+impl Expectable for RCType { 
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
+        if stream.peek_for_punctuation(Punctuation::SpecialType)? { 
+            Metaclass::parse_expect(stream).map(RCType::Special)
+        } 
+        else { 
+            Type::parse_expect(stream).map(RCType::Normal)
+        }
+    }
+}
+impl Peekable for RCType { 
+    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
+        if stream.peek_for_punctuation(Punctuation::SpecialType)? { 
+            Metaclass::parse_expect(stream).map(|t| Some(RCType::Special(t)))
+        } 
+        else if let Some(typ) = Type::parse_peek(stream)? { 
+            Ok(Some(RCType::Normal(typ)))
+        }
+        else { 
+            Ok(None) 
+        }
+    }
+}
+
+/// This is a reference to an RC;
+/// either an identifier or a Special Type.  
+/// 
+/// 
+#[derive(Debug, PartialEq, Eq)]
+pub enum RCReference { 
+    Normal(GenericIdentifier),
+    Special(Metaclass)
+}
+impl Expectable for RCReference { 
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
+        if stream.peek_for_punctuation(Punctuation::SpecialType)? { 
+            Metaclass::parse_expect(stream).map(Self::Special)
+        } else {
+            GenericIdentifier::parse_expect(stream).map(Self::Normal)
+        }
+    }
+}
+
+
 
 //
 // ========
@@ -397,80 +434,6 @@ impl Expectable for Method {
     }
 }
 
-//
-// Misc helpers
-//
-
-/// These are the spcecial types usable within resource classes
-/// 
-/// https://veneto.notion.site/Special-data-types-d8aab2afcd4d480b988c4b9ec23ec950
-#[derive(EnumString, Debug, Display, PartialEq, Eq)]
-#[strum(serialize_all="lowercase")]
-pub enum SpecialType { 
-    #[strum(serialize="self")]
-    RCSelf, 
-    Media,
-    Empty, 
-}
-
-impl Expectable for SpecialType { 
-    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
-        let next = stream.next()?;
-        SpecialType::from_str(&next.try_as_identifier()?).map_err(|_| next.as_err(ParseErrorKind::UnknownSpecialType))
-    }
-}
-
-/// This represents a type expression within the context of a resource class;
-/// it contains a normal type or an `RCReference`.  
-#[derive(Debug, PartialEq)]
-pub enum RCType { 
-    Normal(Type),
-    Special(SpecialType), 
-    //TAG: RC_FLAGS
-    // When we add RC flags, `Normal` may have to be changed
-}
-impl Expectable for RCType { 
-    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
-        if stream.peek_for_punctuation(Punctuation::SpecialType)? { 
-            SpecialType::parse_expect(stream).map(RCType::Special)
-        } 
-        else { 
-            Type::parse_expect(stream).map(RCType::Normal)
-        }
-    }
-}
-impl Peekable for RCType { 
-    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
-        if stream.peek_for_punctuation(Punctuation::SpecialType)? { 
-            SpecialType::parse_expect(stream).map(|t| Some(RCType::Special(t)))
-        } 
-        else if let Some(typ) = Type::parse_peek(stream)? { 
-            Ok(Some(RCType::Normal(typ)))
-        }
-        else { 
-            Ok(None) 
-        }
-    }
-}
-
-/// This is a reference to an RC;
-/// either an identifier or a Special Type.  
-/// 
-/// 
-#[derive(Debug, PartialEq, Eq)]
-pub enum RCReference { 
-    Normal(RCIdentifier),
-    Special(SpecialType)
-}
-impl Expectable for RCReference { 
-    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
-        if stream.peek_for_punctuation(Punctuation::SpecialType)? { 
-            SpecialType::parse_expect(stream).map(Self::Special)
-        } else {
-            RCIdentifier::parse_expect(stream).map(Self::Normal)
-        }
-    }
-}
 
 
 #[cfg(test)]
@@ -485,7 +448,7 @@ mod test {
     use crate::parse::{ParseResult, ParseErrorKind};
     use crate::parse::ast::{Expectable, Peekable};
 
-    use super::{Method, RCType, MethodInput, MethodName, SpecialType, LinksBlock, Link, RCIdentifier, ResourceClass, RCDeclaration, MethodOutput, RCReference};
+    use super::{Method, RCType, MethodInput, MethodName, Metaclass, LinksBlock, Link, ResourceClass, RCDeclaration, MethodOutput, RCReference};
 
     fn parse_method(input: &str) -> ParseResult<Method> { 
         let mut stream = token_stream(input); 
@@ -536,7 +499,7 @@ mod test {
             name: MethodName::Post,
             input: None, 
             outputs: vec![ 
-                MethodOutput { status: None, typ: Some(RCType::Special(SpecialType::Empty)) }
+                MethodOutput { status: None, typ: Some(RCType::Special(Metaclass::Empty)) }
             ]
         })
     }
@@ -630,7 +593,7 @@ mod test {
                 lax: true,
             }),
             outputs: vec![ 
-                MethodOutput { status: None, typ: Some(RCType::Special(SpecialType::Empty)) }
+                MethodOutput { status: None, typ: Some(RCType::Special(Metaclass::Empty)) }
             ]
         })
     }
@@ -651,7 +614,7 @@ mod test {
             Link { 
                 rel: "foo".to_string(), 
                 optional: false, 
-                typ: RCReference::Normal(RCIdentifier { base: "bar".to_string(), generics: vec![] })
+                typ: RCReference::Normal(GenericIdentifier { base: "bar".to_string(), args: vec![] })
             }
         ]);
     }
@@ -662,7 +625,7 @@ mod test {
             Link { 
                 rel: "foo".to_string(), 
                 optional: true, 
-                typ: RCReference::Special(SpecialType::RCSelf),
+                typ: RCReference::Special(Metaclass::RCSelf),
             }
         ])
     }
@@ -673,12 +636,12 @@ mod test {
             Link { 
                 rel: "bar".to_string(),
                 optional: false, 
-                typ: RCReference::Normal(RCIdentifier { base: "foo".to_string(), generics: vec![] })
+                typ: RCReference::Normal(GenericIdentifier { base: "foo".to_string(), args: vec![] })
             },
             Link { 
                 rel: "baz".to_string(), 
                 optional: true, 
-                typ: RCReference::Normal(RCIdentifier { base: "optional".to_string(), generics: vec![] })
+                typ: RCReference::Normal(GenericIdentifier { base: "optional".to_string(), args: vec![] })
             }
         ]);
     }
@@ -689,11 +652,11 @@ mod test {
             Link { 
                 rel: "baz".to_string(), 
                 optional: false, 
-                typ: RCReference::Normal(RCIdentifier { 
+                typ: RCReference::Normal(GenericIdentifier { 
                     base: "foo".to_string(), 
-                    generics: vec![ RCIdentifier { 
+                    args: vec![ GenericIdentifier { 
                         base: "bar".to_string(), 
-                        generics: vec![] 
+                        args: vec![] 
                     } ] 
                 })
             }
@@ -736,7 +699,7 @@ mod test {
 
         }", ResourceClass { 
 
-            declaration: RCDeclaration::Basic(RCIdentifier { base: "Foo".to_string(), generics: vec![] }),
+            declaration: RCDeclaration::Basic(GenericIdentifier { base: "Foo".to_string(), args: vec![] }),
 
             data: Some(make_simple_type(
                 TypeKind::Array(Box::new(
@@ -751,9 +714,9 @@ mod test {
                 Link { 
                     rel: "bar".to_string(),  
                     optional: false, 
-                    typ: RCReference::Normal(RCIdentifier { 
+                    typ: RCReference::Normal(GenericIdentifier { 
                         base: "baz".to_string(), 
-                        generics: vec![], 
+                        args: vec![], 
                     })
                 }
             ], 
@@ -770,11 +733,11 @@ mod test {
                 Method { 
                     name: MethodName::Patch, 
                     input: Some(MethodInput { 
-                        typ: RCType::Special(SpecialType::RCSelf),
+                        typ: RCType::Special(Metaclass::RCSelf),
                         lax: true, 
                     }), 
                     outputs: vec![ 
-                        MethodOutput { status: None, typ: Some(RCType::Special(SpecialType::RCSelf)) }
+                        MethodOutput { status: None, typ: Some(RCType::Special(Metaclass::RCSelf)) }
                     ]
                 }
             ],
@@ -785,9 +748,9 @@ mod test {
     #[test]
     fn rc_generics() { 
         assert_rc("resource foo<T> {}", ResourceClass { 
-            declaration: RCDeclaration::Basic(RCIdentifier { 
+            declaration: RCDeclaration::Basic(GenericIdentifier { 
                 base: "foo".to_string(), 
-                generics: vec![ RCIdentifier { base: "T".to_string(), generics: vec![] } ] 
+                args: vec![ GenericIdentifier { base: "T".to_string(), args: vec![] } ] 
             }),
 
             data: None, 
@@ -803,10 +766,10 @@ mod test {
         assert_rc("resource foo extends bar<T> {}", ResourceClass { 
             declaration: RCDeclaration::Extended(
                 "foo".to_string(), 
-                RCIdentifier { 
+                GenericIdentifier { 
                     base: "bar".to_string(), 
-                    generics: vec![ 
-                        RCIdentifier { base: "T".to_string(), generics: vec![] }
+                    args: vec![ 
+                        GenericIdentifier { base: "T".to_string(), args: vec![] }
                     ]
                 }
             ),
@@ -848,7 +811,7 @@ mod test {
             }", 
             ResourceClass { 
                 declaration: RCDeclaration::Basic(
-                    RCIdentifier { base: "rc".to_string(), generics: vec![] }
+                    GenericIdentifier { base: "rc".to_string(), args: vec![] }
                 ),
 
                 data: Some(make_simple_type(TypeKind::Array(Box::new(
@@ -883,7 +846,7 @@ mod test {
                 embed { foo: Bar }
             }", 
             ResourceClass { 
-                declaration: RCDeclaration::Basic(RCIdentifier { base: "Embedder".to_string(), generics: vec![] }),
+                declaration: RCDeclaration::Basic(GenericIdentifier { base: "Embedder".to_string(), args: vec![] }),
                 data: None, 
                 embed: Some(make_simple_type(TypeKind::Struct(vec![ 
                     StructField { 

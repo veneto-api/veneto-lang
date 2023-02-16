@@ -244,6 +244,9 @@ pub enum Punctuation {
     #[strum(serialize="@")]
     SpecialType,
 
+    #[strum(serialize="&")]
+    Reference, 
+
     #[strum(serialize="#")]
     HttpStatus,
 

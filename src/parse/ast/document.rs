@@ -2,12 +2,12 @@ use std::collections::HashMap;
 
 use crate::parse::{lexer::TokenStream, ParseResult, tokens::{Keyword, Punctuation, TokenKind}};
 
-use super::{types::Type, rc::{RCIdentifier, ResourceClass}, interfaces::InterfaceExpression, use_tree::UseTree, Expectable, Peekable};
+use super::{types::Type, rc::ResourceClass, interfaces::InterfaceExpression, use_tree::UseTree, Expectable, Peekable, general::GenericIdentifier};
 
 #[allow(dead_code)]
 pub struct EntryPoint { 
     pub uri: String, 
-    pub rc: RCIdentifier, 
+    pub rc: GenericIdentifier, 
 }
 
 pub struct Document { 
@@ -51,7 +51,7 @@ impl Document {
             else if stream.peek_for_keyword(Keyword::Entry)? { 
                 let uri = stream.next()?.try_as_string_literal()?; 
                 stream.next()?.expect_punctuation(Punctuation::Arrow)?; 
-                let rc = RCIdentifier::parse_expect(&mut stream)?; 
+                let rc = GenericIdentifier::parse_expect(&mut stream)?; 
                 doc.entry_points.push(EntryPoint { uri, rc })
             }
             else { 

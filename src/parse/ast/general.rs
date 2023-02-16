@@ -10,6 +10,9 @@ use super::{Peekable, Expectable, Finishable};
 pub struct GenericIdentifier { 
     pub base: String, 
     pub args: GenericArgs,
+
+    //TAG: RC_FLAGS
+    // https://www.notion.so/veneto/RC-Flags-conditionals-c1ed70a794d14511b57e06d1798a62a8?pvs=4
 }
 pub type GenericArgs = Vec<GenericIdentifier>; 
 
@@ -59,6 +62,12 @@ impl GenericIdentifier {
     #[cfg(test)]
     pub(crate) fn simple(base: &'static str) -> Self { 
         Self { base: base.to_string(), args: GenericArgs::default() }
+    }
+
+    pub fn has_modifiers(&self) -> bool { 
+        !self.args.is_empty()
+        //TAG: RC_FLAGS
+        // https://www.notion.so/veneto/RC-Flags-conditionals-c1ed70a794d14511b57e06d1798a62a8?pvs=4
     }
 }
 

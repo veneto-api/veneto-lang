@@ -17,7 +17,7 @@ mod test {
 
 
     use crate::parse::ast::general::GenericIdentifier;
-    use crate::parse::ast::rc::{ResourceClass, RCDeclaration, RCIdentifier, Method, MethodName, MethodOutput, Link, RCReference, SpecialType, MethodInput, RCType};
+    use crate::parse::ast::rc::{ResourceClass, RCDeclaration, Method, MethodName, MethodOutput, Link, RCReference, Metaclass, MethodInput, RCType};
     use crate::parse::ast::types::{Type, TypeKind}; 
 
     #[test]
@@ -27,12 +27,12 @@ mod test {
 
         // Ref<T>
         assert_eq!(rcs.next().unwrap(), &ResourceClass { 
-            declaration: RCDeclaration::Basic(RCIdentifier { 
+            declaration: RCDeclaration::Basic(GenericIdentifier { 
                 base: "Ref".to_string(), 
-                generics: vec![ 
-                    RCIdentifier { 
+                args: vec![ 
+                    GenericIdentifier { 
                         base: "T".to_string(), 
-                        generics: vec![], 
+                        args: vec![], 
                     }
                  ]
             }),
@@ -69,12 +69,12 @@ mod test {
 
         // List<T>
         assert_eq!(rcs.next().unwrap(), &ResourceClass { 
-            declaration: RCDeclaration::Basic(RCIdentifier { 
+            declaration: RCDeclaration::Basic(GenericIdentifier { 
                 base: "List".to_string(), 
-                generics: vec![ 
-                    RCIdentifier { 
+                args: vec![ 
+                    GenericIdentifier { 
                         base: "T".to_string(), 
-                        generics: vec![], 
+                        args: vec![], 
                     }
                 ]
             }),
@@ -83,13 +83,8 @@ mod test {
             embed: Some(Type { 
                 kind: TypeKind::Array(Box::new(Type { 
                     kind: TypeKind::Identifier(GenericIdentifier { 
-                        base: "Ref".to_string(), 
-                        args: vec![ 
-                            GenericIdentifier { 
-                                base: "T".to_string(), 
-                                args: vec![], 
-                            }
-                        ]
+                        base: "T".to_string(), 
+                        args: vec![],
                     }),
                     optional: false,
                     in_plus: None,
@@ -105,7 +100,7 @@ mod test {
                 Link { 
                     rel: "next".to_string(), 
                     optional: true, 
-                    typ: RCReference::Special(SpecialType::RCSelf),
+                    typ: RCReference::Special(Metaclass::RCSelf),
                 }
             ],
 
@@ -143,9 +138,9 @@ mod test {
 
         // Media
         assert_eq!(rcs.next().unwrap(), &ResourceClass { 
-            declaration: RCDeclaration::Basic(RCIdentifier { 
+            declaration: RCDeclaration::Basic(GenericIdentifier { 
                 base: "Media".to_string(), 
-                generics: vec![], 
+                args: vec![], 
             }), 
             data: None, 
             embed: None, 
@@ -159,14 +154,14 @@ mod test {
                     outputs: vec![ 
                         MethodOutput { 
                             status: None, 
-                            typ: Some(RCType::Special(SpecialType::Media))
+                            typ: Some(RCType::Special(Metaclass::Media))
                         }
                     ]
                 },
                 Method { 
                     name: MethodName::Put, 
                     input: Some(MethodInput { 
-                        typ: RCType::Special(SpecialType::Media), 
+                        typ: RCType::Special(Metaclass::Media), 
                         lax: false, 
                     }), 
                     outputs: vec![], 
@@ -176,9 +171,9 @@ mod test {
 
         // Action
         assert_eq!(rcs.next().unwrap(), &ResourceClass { 
-            declaration: RCDeclaration::Basic(RCIdentifier { 
+            declaration: RCDeclaration::Basic(GenericIdentifier { 
                 base: "Action".to_string(), 
-                generics: vec![],
+                args: vec![],
             }), 
             data: None, 
             embed: None, 

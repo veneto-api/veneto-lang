@@ -11,7 +11,7 @@ resource Ref<T> {
 
 resource List<T>  {
 
-	embed Ref<T>[]
+	embed T[]
 
 	links { 
         /**
