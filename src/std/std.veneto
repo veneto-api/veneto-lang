@@ -1,4 +1,10 @@
-
+/**
+ * A `Ref` is a reference to another existing resource.
+ *
+ * This is most useful in conjunction with `List`s, as a `List<Ref<T>>`.  
+ * That allows you to remove an item from the list by `DELETE`ing its `Ref`, 
+ * rather than deleting the entire item itself. 
+ */
 resource Ref<T> { 
 	embed T
 	
@@ -9,15 +15,18 @@ resource Ref<T> {
 	DELETE;
 }
 
+/**
+ * This is a paginated list.  
+ */
 resource List<T>  {
 
 	embed T[]
 
 	links { 
         /**
-            References the next page of the list, if such a page exists.
-
-            If empty, this is the final page of the list. 
+         * References the next page of the list, if such a page exists.
+		 * 
+         * If empty, this is the final page of the list. 
         */
 		next? -> @self, 
 	}
@@ -31,16 +40,16 @@ resource List<T>  {
 
 
 /**
-    A Media resource is just a file; this Resource Class is essentially a placeholder for anything that's not data.
-
-    For example, this is appropriate to allow users to upload and download images. 
+ * This is essentially a placeholder for anything that's not data.
+ *
+ * For example, this is appropriate to allow users to upload and download images. 
 */
 resource Media { 
 	GET -> @media;
 	PUT @media;
 }
 
-/// An Action is a simple POST-only link with no request body. 
+/// A simple POST-only link with no request body. 
 resource Action { 
 	POST -> #204;
 }
