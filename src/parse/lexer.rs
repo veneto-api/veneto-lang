@@ -280,7 +280,7 @@ impl<'a> RawTokenStream<'a> {
                     if c.is_alphabetic() { 
                         return Ok(Token { 
                             kind: TokenKind::Word(
-                                self.take_while(c, |ch| ch.is_alphanumeric() || ch == '-' || ch == '_')?
+                                self.take_while(c, |ch| ch.is_alphanumeric() || ch == '_')?
                             ), 
                             position
                         })

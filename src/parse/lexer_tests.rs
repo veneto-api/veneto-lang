@@ -41,10 +41,10 @@ fn words() {
 
 #[test]
 fn valid_identifiers() { 
-    let mut stream = token_stream("asdf foo_bar f12_a-17BAR");
+    let mut stream = token_stream("asdf foo_bar f12_a17BAR");
     assert_identifier(&mut stream, "asdf");
     assert_identifier(&mut stream, "foo_bar");
-    assert_identifier(&mut stream, "f12_a-17BAR");
+    assert_identifier(&mut stream, "f12_a17BAR");
     assert_eof(&mut stream);
 }
 

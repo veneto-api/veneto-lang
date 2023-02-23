@@ -60,10 +60,11 @@ rc_data = 'data' type ;
 rc_embed = 'embed' type; 
 rc_interface = 'interface' (identifier | interface_block) ; 
 
+rc_links    = 'links' links_block  ;
+links_block = '{' links_list '}'; 
+links_list  = '' | link [',' [links_list]] ;
+link        = Identifier ['?'] '->' rc_reference ;
 
-rc_links = 'links' '{' links_block '}' ;
-links_block = [{ link ^+ ',' }] ; 
-link = identifier ['?'] '->' rc_reference ;
 
 
 rc_method = method_name [method_input] ['->' method_outputs] ';' ;

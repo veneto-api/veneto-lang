@@ -6,36 +6,36 @@
  * rather than deleting the entire item itself. 
  */
 resource Ref<T> { 
-	embed T
-	
-	/// GET is not mandatory for this type
-	GET -> #405;
+    embed T
+    
+    /// GET is not mandatory for this type
+    GET -> #405;
 
     /// Removes the referenced item
-	DELETE;
+    DELETE;
 }
 
 /**
  * This is a paginated list.  
  */
-resource List<T>  {
+resource List<T> {
 
-	embed T[]
+    embed T[]
 
-	links { 
+    links { 
         /**
          * References the next page of the list, if such a page exists.
-		 * 
+         * 
          * If empty, this is the final page of the list. 
         */
-		next? -> @self, 
-	}
+        next? -> @self, 
+    }
 
     /// Renders the current page of the list.
-	GET;
+    GET;
 
-	/// Creates a new item within the list. 
-	POST T -> #201 T;
+    /// Creates a new item within the list. 
+    POST T -> #201 T;
 }
 
 
@@ -45,11 +45,11 @@ resource List<T>  {
  * For example, this is appropriate to allow users to upload and download images. 
 */
 resource Media { 
-	GET -> @media;
-	PUT @media;
+    GET -> @media;
+    PUT @media;
 }
 
 /// A simple POST-only link with no request body. 
 resource Action { 
-	POST -> #204;
+    POST -> #204;
 }

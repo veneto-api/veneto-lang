@@ -1,4 +1,4 @@
-use super::{lexer::TokenStream, ParseResult, tokens::Terminal};
+use super::{lexer::TokenStream, ParseResult, tokens::{Terminal, Punctuation}};
 
 /// This is parses common miscellaneous expressions.
 /// At the time, that's only generic identifiers, so maybe this module should be renamed.
@@ -77,4 +77,19 @@ impl<T> Expectable for T where T: Finishable {
         stream.next()?.expect_terminal(Self::INITIAL_TOKEN)?; 
         T::parse_finish(stream)
     }
+}
+
+
+
+fn parse_list_into<T: Peekable>(vec: &mut Vec<T>, stream: &mut TokenStream) -> ParseResult<()> { 
+
+    if let Some(node) = T::parse_peek(stream)? { 
+        vec.push(node); 
+
+        if stream.peek_for_punctuation(Punctuation::Comma)? { 
+            parse_list_into(vec, stream)?; 
+        }
+    } 
+    
+    Ok(())
 }
