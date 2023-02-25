@@ -91,7 +91,7 @@ impl Unit {
 /// Doc comments will be handled here too
 /// https://www.notion.so/veneto/Support-Doc-Comments-67e5f478d063488cabf2daba91eccf12
 /// TAG: DOC_COMMENTS
-struct UnitStream<'a> { 
+pub(super) struct UnitStream<'a> { 
     chars: Chars<'a>,
     peeked: VecDeque<char>,
 
@@ -117,20 +117,15 @@ impl<'a> UnitStream<'a> {
         self.peeked.push_back(ch); 
     }
 
-    fn read_next(&mut self, peek: bool) -> Option<char> { 
-        let i = self.index + 1; 
+    /// Reads the next character from the source stream, also handling newlines
+    /// 
+    /// This should only be called from `inner_next` and `inner_peek`, 
+    /// so that the rest of the implementation doesn't have to care about the peek queue 
+    fn read_next(&mut self) -> Option<char> { 
         let ch = self.chars.next(); 
 
         if let Some('\n') = ch { 
-            self.newlines.push(i); 
-        }
-
-        if let Some(ch) = ch { 
-            if peek { 
-                self.peeked.push_back(ch)
-            } else { 
-                self.index = i; 
-            }
+            self.newlines.push(self.index); 
         }
 
         ch
@@ -138,7 +133,9 @@ impl<'a> UnitStream<'a> {
 
     /// Takes the next character, from either the queue or the source stream.
     fn inner_next(&mut self) -> Option<char> { 
-        self.peeked.pop_front().or_else(|| self.read_next(false))
+        let ch = self.peeked.pop_front().or_else(|| self.read_next());
+        self.index += 1; 
+        ch
     }
 
     /// Peeks the next character, without advancing the stream.
@@ -148,7 +145,11 @@ impl<'a> UnitStream<'a> {
     fn inner_peek(&mut self) -> Option<char> { 
         match self.peeked.front() { 
             Some(ch) => Some(*ch), 
-            None => self.read_next(true), 
+            None => { 
+                let next = self.read_next();
+                if let Some(ch) = next { self.peeked.push_back(ch) }
+                next 
+            }, 
         }
     }
 
@@ -190,28 +191,6 @@ impl<'a> UnitStream<'a> {
         }
     }
 
-    /// Like `skip_past`, except it returns all of the scanned characters up to that point. 
-    fn take_up_to(&mut self, expected: char) -> ParseResult<String> { 
-        let mut str = String::new(); 
-
-        loop { 
-            match self.inner_next() { 
-                None => return Err(ParseError{
-                    kind: ParseErrorKind::Unexpected(TokenKind::EOF),
-                    span: Position(self.index).into(),
-                    backtrace: Backtrace::capture(),
-                }),
-                Some(ch) => { 
-                    if ch == expected { return Ok(str) }
-                    else { 
-                        str.push(ch);
-                        continue 
-                    }
-                }
-            }
-        }
-    }
-
     /// Peeks the stream for an instance of `expected`, and only advances the stream if it is found.
     /// 
     /// If `expected` is the next character, the function returns `true` and the stream is advanced.
@@ -224,32 +203,48 @@ impl<'a> UnitStream<'a> {
         else { false }
     }
 
-    fn make_unit(&self, kind: UnitKind) -> Unit { 
-        Unit { 
-            index: self.index,
-            kind
-        }
-    }
+    fn next(&mut self) -> ParseResult<Unit> { 
 
-    pub fn next(&mut self) -> ParseResult<Unit> { 
+        let i = self.index;
+        let make_unit = |kind: UnitKind| Unit { kind, index: i };
+
         match self.inner_next() { 
-            None => Ok(self.make_unit(UnitKind::EOF)), 
+            None => Ok(make_unit(UnitKind::EOF)), 
             Some(ch) => { 
                 if ch.is_whitespace() { 
                     self.skip_while(|ch| ch.is_whitespace());
-                    Ok(self.make_unit(UnitKind::Whitespace))
+                    Ok(make_unit(UnitKind::Whitespace))
                 }
                 else if ch == '"' { 
                     // Handle string literals. 
                     // If we add escaping, it'll happen here
                     //TAG: ESCAPING https://veneto.notion.site/Escaping-in-string-literals-d76caa72c65546a09ce0e668025f36bc
 
-                    let contents = self.take_up_to('"')?; 
+                    let mut str = String::new(); 
+                    let mut end_index;
 
-                    Ok(self.make_unit(UnitKind::StringLiteral(
-                        contents,
-                        self.index, // The index after `take_up_to` 
-                    )))
+                    loop { 
+                        end_index = self.index;
+                        match self.inner_next() { 
+                            None => return Err(ParseError{
+                                kind: ParseErrorKind::Unexpected(TokenKind::EOF),
+                                span: Position(self.index).into(),
+                                backtrace: Backtrace::capture(),
+                            }),
+                            Some(ch) => { 
+                                if ch == '"' { 
+                                    return Ok(make_unit(UnitKind::StringLiteral(
+                                        str,
+                                        end_index 
+                                    )))
+                                }
+                                else { 
+                                    str.push(ch);
+                                    continue 
+                                }
+                            }
+                        }
+                    }
                 }
                 else if ch == '/' { 
                     // Check for comments
@@ -263,7 +258,7 @@ impl<'a> UnitStream<'a> {
                         let _ = self.skip_past('\n');
 
                         self.skip_while(|ch| ch.is_whitespace());
-                        Ok(self.make_unit(UnitKind::Whitespace))
+                        Ok(make_unit(UnitKind::Whitespace))
                     }
                     else if self.check_for('*') { 
                         // If the cursor is at a `/*`, this is a block comment.
@@ -275,17 +270,17 @@ impl<'a> UnitStream<'a> {
                         }
 
                         self.skip_while(|ch| ch.is_whitespace());
-                        Ok(self.make_unit(UnitKind::Whitespace))
+                        Ok(make_unit(UnitKind::Whitespace))
                     }
                     else { 
                         // No `/` or `*` was found after the first `/`, so this is not a comment.
                         // Return the character as normal
-                        Ok(self.make_unit(UnitKind::Char(ch)))
+                        Ok(make_unit(UnitKind::Char(ch)))
                     }
 
                 }
                 else { 
-                    Ok(self.make_unit(UnitKind::Char(ch)))
+                    Ok(make_unit(UnitKind::Char(ch)))
                 }
             }
         }
@@ -295,8 +290,8 @@ impl<'a> UnitStream<'a> {
 
 /// The second stage of the lexer:  
 /// On top of the output from the first stage, this coalesces character types into single tokens. 
-struct RawTokenStream<'a> { 
-    stream: UnitStream<'a>,
+pub(super) struct RawTokenStream<'a> { 
+    pub(super) stream: UnitStream<'a>,
     peeked: VecDeque<Unit>,
 }
 impl<'a> RawTokenStream<'a> { 
@@ -328,6 +323,7 @@ impl<'a> RawTokenStream<'a> {
         predicate: fn(char) -> bool
     ) -> ParseResult<Token> { 
         let mut str = String::new(); 
+        let mut last_pos = Position(first_index); 
         str.push(first_char); 
 
         loop { 
@@ -336,17 +332,17 @@ impl<'a> RawTokenStream<'a> {
             match next.kind { 
                 UnitKind::Char(ch) if predicate(ch) => { 
                     str.push(ch); 
+                    last_pos = next.get_end();
                     continue 
                 },
 
                 _ => { 
-                    let hi = next.get_end();
                     self.backtrack(next); 
                     return Ok(Token { 
                         kind: kind(str), 
                         span: Span { 
                             lo: Position(first_index),
-                            hi, 
+                            hi: last_pos, 
                         }
                     })
                 }
@@ -403,6 +399,14 @@ impl<'a> RawTokenStream<'a> {
                             So the way we do this is to process the entire word and keep track of our longest match.
                             We have a list so that we can backtrack if we end up overshooting the longest match,
                             and it's mutable so that it can be reset every time we have a new match. 
+
+                            TODO: Perhaps a better idea is to just preemptively peek all of the possible characters...
+                            that way i'm not re-peeking those characters in the case of consecutive punctuations
+                            To make it stateless, we can just read from the source stream until a non-punctuation char is found each time
+                                so that way it won't happen twice 
+                            
+                            But honestly this probably needs to all go in the first stage anyways.
+                            The more I think about it the less sense the multi-stage lexer makes
                          */
 
                         // Lol we have another `next` below so it gets confusing
@@ -528,7 +532,7 @@ impl<'a> RawTokenStream<'a> {
 
 /// This is a wrapper around the `RawTokenStream` that just exists to enable peeking features.
 pub struct TokenStream<'a> { 
-    stream: RawTokenStream<'a>,
+    pub(super) stream: RawTokenStream<'a>,
     peeked: VecDeque<Token>,
 }
 impl<'a> Debug for TokenStream<'a> {

@@ -1,3 +1,5 @@
+use crate::parse::lexer::{Span, Position};
+
 use super::ParseResult;
 use super::lexer::TokenStream;
 use super::tokens::{ TokenKind, Keyword };
@@ -33,9 +35,19 @@ pub fn assert_keyword(stream: &mut TokenStream, expected: Keyword) {
 #[test]
 fn words() { 
     let mut stream = token_stream("asdf jkl ree");
-    assert_identifier(&mut stream, "asdf");
-    assert_identifier(&mut stream, "jkl");
-    assert_identifier(&mut stream, "ree");
+
+    let token = stream.next().unwrap(); 
+    assert_eq!(token.as_identifier().unwrap(), "asdf"); 
+    assert_eq!(token.span, Span { lo: Position(0), hi: Position(4) });
+
+    let token = stream.next().unwrap(); 
+    assert_eq!(token.as_identifier().unwrap(), "jkl"); 
+    assert_eq!(token.span, Span { lo: Position(5), hi: Position(8) });
+
+    let token = stream.next().unwrap(); 
+    assert_eq!(token.as_identifier().unwrap(), "ree"); 
+    assert_eq!(token.span, Span { lo: Position(9), hi: Position(12) });
+
     assert_eof(&mut stream);
 }
 
@@ -51,9 +63,21 @@ fn valid_identifiers() {
 #[test]
 fn line_comment() -> ParseResult<()> { 
     let mut stream = token_stream("asdf// jsdklf \"heee\" hoo raaa\n\nfoobar endofline");
-    assert_identifier(&mut stream, "asdf");
-    assert_identifier(&mut stream, "foobar");
-    assert_identifier(&mut stream, "endofline");
+
+    let next = stream.next().unwrap();
+    assert_eq!(next.as_identifier().unwrap(), "asdf");
+    assert_eq!(next.span, Span { lo: Position(0), hi: Position(4) });
+
+    let next = stream.next().unwrap();
+    assert_eq!(next.as_identifier().unwrap(), "foobar");
+    assert_eq!(next.span, Span { lo: Position(31), hi: Position(37) });
+
+    let next = stream.next().unwrap();
+    assert_eq!(next.as_identifier().unwrap(), "endofline");
+    assert_eq!(next.span, Span { lo: Position(38), hi: Position(47) });
+
+    assert_eq!(stream.stream.stream.newlines, vec![ 29, 30 ]);
+
     assert_eof(&mut stream); 
     Ok(())
 }
@@ -61,18 +85,42 @@ fn line_comment() -> ParseResult<()> {
 #[test]
 fn block_comment() { 
     let mut stream = token_stream("asdf/* eee\neeeass//\n*\n/*\n*/   end");
-    assert_identifier(&mut stream, "asdf");
-    assert_identifier(&mut stream, "end");
+
+    let next = stream.next().unwrap();
+    assert_eq!(next.as_identifier().unwrap(), "asdf");
+    assert_eq!(next.span, Span { lo: Position(0), hi: Position(4) });
+
+    let next = stream.next().unwrap();
+    assert_eq!(next.as_identifier().unwrap(), "end");
+    assert_eq!(next.span, Span { lo: Position(30), hi: Position(33) });
+
+    assert_eq!(stream.stream.stream.newlines, vec![ 10, 19, 21, 24 ]);
+
     assert_eof(&mut stream);
 }
 
 #[test]
 fn spacing() { 
     let mut stream = token_stream("aaa\neee   \n\t  foo  bar \n");
-    assert_identifier(&mut stream, "aaa");
-    assert_identifier(&mut stream, "eee");
-    assert_identifier(&mut stream, "foo");
-    assert_identifier(&mut stream, "bar");
+
+    let next = stream.next().unwrap();
+    assert_eq!(next.as_identifier().unwrap(), "aaa");
+    assert_eq!(next.span, Span { lo: Position(0), hi: Position(3) });
+
+    let next = stream.next().unwrap();
+    assert_eq!(next.as_identifier().unwrap(), "eee");
+    assert_eq!(next.span, Span { lo: Position(4), hi: Position(7) });
+
+    let next = stream.next().unwrap();
+    assert_eq!(next.as_identifier().unwrap(), "foo");
+    assert_eq!(next.span, Span { lo: Position(14), hi: Position(17) });
+
+    let next = stream.next().unwrap();
+    assert_eq!(next.as_identifier().unwrap(), "bar");
+    assert_eq!(next.span, Span { lo: Position(19), hi: Position(22) });
+
+    assert_eq!(stream.stream.stream.newlines, vec![ 3, 10,  23]);
+
     assert_eof(&mut stream);
 }
 
@@ -80,9 +128,17 @@ fn spacing() {
 fn punctuation() { 
     let mut stream = token_stream("asdf @foo% bar #123");
     assert_identifier(&mut stream, "asdf");
-    assert_punctuation(&mut stream, Punctuation::SpecialType);
+
+    let next = stream.next().unwrap();
+    assert_eq!(next.as_punctuation().unwrap(), Punctuation::SpecialType);
+    assert_eq!(next.span, Span { lo: Position(5), hi: Position(6) });
+
     assert_identifier(&mut stream, "foo");
-    assert_punctuation(&mut stream, Punctuation::Lax);
+
+    let next = stream.next().unwrap();
+    assert_eq!(next.as_punctuation().unwrap(), Punctuation::Lax);
+    assert_eq!(next.span, Span { lo: Position(9), hi: Position(10) });
+
     assert_identifier(&mut stream, "bar");
     assert_punctuation(&mut stream, Punctuation::HttpStatus);
 
@@ -95,7 +151,11 @@ fn punctuation() {
 fn multichar_punctuation() { 
     let mut stream = token_stream("foo :: bar"); 
     assert_identifier(&mut stream, "foo");
-    assert_punctuation(&mut stream, Punctuation::PathSeparator);
+    
+    let next = stream.next().unwrap();
+    assert_eq!(next.as_punctuation().unwrap(), Punctuation::PathSeparator);
+    assert_eq!(next.span, Span { lo: Position(4), hi: Position(6) });
+
     assert_identifier(&mut stream, "bar");
     assert_eof(&mut stream);
 }
@@ -103,24 +163,34 @@ fn multichar_punctuation() {
 #[test]
 fn conjoined_punctuation() { 
     let mut stream = token_stream(":::");
-    assert_punctuation(&mut stream, Punctuation::PathSeparator);
-    assert_punctuation(&mut stream, Punctuation::Colon);
+
+    let next = stream.next().unwrap();
+    assert_eq!(next.as_punctuation().unwrap(), Punctuation::PathSeparator);
+    assert_eq!(next.span, Span { lo: Position(0), hi: Position(2) });
+
+    let next = stream.next().unwrap();
+    assert_eq!(next.as_punctuation().unwrap(), Punctuation::Colon);
+    assert_eq!(next.span, Span { lo: Position(2), hi: Position(3) });
+
     assert_eof(&mut stream);
 }
 
 #[test]
 fn string_literal() { 
     // Comments are ignored inside of strings under the current lexing rules
-    // Also, we do not restrict newlines inside of literals.  This is dumb, but I never implemented a rule preventing it.  
-    // This could change of course 
+    // Also, we do not restrict newlines inside of literals.
     let mut stream = token_stream("foo \"aa \n\t oo // ee /* aa */ ff \"   bar");
     assert_identifier(&mut stream, "foo");
 
-    if let TokenKind::StringLiteral(str) = stream.next().unwrap().kind { 
+    let next = stream.next().unwrap();
+    if let TokenKind::StringLiteral(str) = next.kind { 
         assert_eq!(str, "aa \n\t oo // ee /* aa */ ff ")
     }
     else { panic!("Expected StringLiteral") }
+    assert_eq!(next.span, Span { lo: Position(4), hi: Position(32) });
 
     assert_identifier(&mut stream, "bar");
     assert_eof(&mut stream);
+
+    assert_eq!(stream.stream.stream.newlines, vec![ 8 ])
 }
