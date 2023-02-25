@@ -2,6 +2,7 @@ use std::{str::FromStr, backtrace::Backtrace};
 use strum_macros::EnumString;
 
 use super::{ParseResult, ParseError, ParseErrorKind};
+use super::lexer::Span; 
 
 // lol dunno if we have to convert these yet 
 pub type Number = String; 
@@ -26,7 +27,7 @@ pub enum TokenKind {
 #[derive(Clone, Debug)]
 pub struct Token { 
     pub kind: TokenKind, 
-    pub position: Position, 
+    pub span: Span, 
 }
 
 
@@ -60,7 +61,7 @@ impl Token {
 
         Err(ParseError { 
             kind: ParseErrorKind::ExpectedPunctuation(expected), 
-            position: self.position,
+            span: self.span,
             backtrace: Backtrace::capture(),
         })
     }
@@ -88,7 +89,7 @@ impl Token {
         }
         Err(ParseError { 
             kind: ParseErrorKind::ExpectedKeyword(expected), 
-            position: self.position,
+            span: self.span,
             backtrace: Backtrace::capture(),
         })
     }
@@ -112,7 +113,7 @@ impl Token {
                 } else { 
                     Err(ParseError { 
                         kind: ParseErrorKind::ExpectedPunctuation(expected), 
-                        position: self.position,
+                        span: self.span,
                         backtrace: Backtrace::capture(),
                     })
                 }
@@ -123,7 +124,7 @@ impl Token {
                 } else { 
                     Err(ParseError { 
                         kind: ParseErrorKind::ExpectedKeyword(expected), 
-                        position: self.position,
+                        span: self.span,
                         backtrace: Backtrace::capture(),
                     })
                 }
@@ -156,7 +157,7 @@ impl Token {
         } else { 
             Err(ParseError { 
                 kind: ParseErrorKind::ExpectedIdentifier, 
-                position: self.position,
+                span: self.span,
                 backtrace: Backtrace::capture(),
             })
         }
@@ -168,7 +169,7 @@ impl Token {
         } else { 
             Err(ParseError { 
                 kind: ParseErrorKind::ExpectedNumber, 
-                position: self.position,
+                span: self.span,
                 backtrace: Backtrace::capture(),
             })
         }
@@ -180,7 +181,7 @@ impl Token {
         } else { 
             Err(ParseError { 
                 kind: ParseErrorKind::ExpectedStringLiteral, 
-                position: self.position,
+                span: self.span,
                 backtrace: Backtrace::capture(),
             })
         }
@@ -190,7 +191,7 @@ impl Token {
     pub fn as_err_unexpected(&self) -> ParseError { 
         ParseError { 
             kind: ParseErrorKind::Unexpected(self.kind.clone()), 
-            position: self.position,
+            span: self.span,
             backtrace: Backtrace::capture(),
         }
     }
@@ -198,27 +199,33 @@ impl Token {
     pub fn as_semantic_error(&self, msg: &'static str) -> ParseError { 
         ParseError { 
             kind: ParseErrorKind::Semantic(msg.to_string()), 
-            position: self.position,
+            span: self.span,
             backtrace: Backtrace::capture(),
         }
     }
 
     pub fn as_err(&self, err: ParseErrorKind) -> ParseError { 
-        ParseError { kind: err, position: self.position, backtrace: Backtrace::capture(), }
+        ParseError { 
+            kind: err, 
+            span: self.span, 
+            backtrace: Backtrace::capture(), 
+        }
     }
 }
 
 
-/// A position in source code
-#[derive(Clone, Copy, Debug)]
-pub struct Position { 
-    pub line:   u32,
-    pub col:    u32, 
-}
-
 
 /// These represent all valid punctuation sequences in the language;
 /// punctuation words that don't match this enum should raise an `UnrecognizedPunctuation` error.
+/// 
+/// # ⚠️ Before adding a variant:
+/// 
+/// 1) If we ever add a `/` operator for any reason, 
+/// that will be preempted by the comment processing in the lexer.  
+/// We'd have to revisit how that works, and make sure to test that comments still work properly
+/// 
+/// 2) For operators longer than a few characters, make sure to update `LONGEST_PUNCTUATION`
+/// or else it will be ignored.  
 #[derive(PartialEq, Eq, Debug, EnumString, Clone, Copy)] 
 pub enum Punctuation { 
 
@@ -231,6 +238,8 @@ pub enum Punctuation {
     BracketOpen, 
     #[strum(serialize="]")]
     BracketClose, 
+
+    // ⚠️ before adding a variant, check the docs 
 
     #[strum(serialize=":")]
     Colon,
@@ -250,6 +259,8 @@ pub enum Punctuation {
     #[strum(serialize="#")]
     HttpStatus,
 
+    // ⚠️ before adding a variant, check the docs 
+
     #[strum(serialize="%")]
     Lax,
 
@@ -261,6 +272,8 @@ pub enum Punctuation {
 
     #[strum(serialize="*")]
     Glob,
+
+    // ⚠️ before adding a variant, check the docs 
 
     #[strum(serialize="<")]
     GenericOpen,
@@ -276,10 +289,17 @@ pub enum Punctuation {
     #[strum(serialize=";")]
     Semicolon, 
 
-    // Also of note, if we ever add a slash `/` operator for any reason,
-    // we should update the tests to make sure that comment handling works properly
-    // (that a single slash doesn't start a comment, etc)
+
+    // ⚠️ before adding a variant, check the docs 
 }
+
+/// This is the length in chars of the longest possible punctuation sequence.
+/// 
+/// This is used by the lexer to limit unnecessary peekaheads.  
+/// This is probably not necessary, but 
+/// extracting a `Punctuation` token is an *O(n log n)* operation, 
+/// so it feels weird to just let it potentially go on forever 
+pub const LONGEST_PUNCTUATION : u8 = 3; 
 
 #[derive(PartialEq, Eq, Debug, EnumString, Clone, Copy)] 
 #[strum(serialize_all="lowercase")]

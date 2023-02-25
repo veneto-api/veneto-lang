@@ -1,21 +1,84 @@
 use std::backtrace::Backtrace;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::str::FromStr;
 use std::{str::Chars, collections::VecDeque};
 
+use crate::parse::tokens::LONGEST_PUNCTUATION;
+
 use super::{ ParseResult, ParseErrorKind, ParseError };
-use super::tokens::{ Token, TokenKind, Position, Punctuation, Keyword, Terminal };
+use super::tokens::{ Token, TokenKind, Punctuation, Keyword, Terminal };
+
+
+pub type Index = u32; 
+
+/// The position _before_ the token begins
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Position (pub Index);
+impl Display for Position { 
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)   
+    }
+}
+
+/// A span of text from the input stream; a start and end position
+/// 
+/// Rustc has a different struct called [`SpanData`](https://doc.rust-lang.org/beta/nightly-rustc/rustc_span/struct.SpanData.html) 
+/// that contains other syntactic information for diagnostics - we can look there when the time comes
+/// Some other potential optimizations to be found in [rustc](https://doc.rust-lang.org/beta/nightly-rustc/rustc_span/span_encoding/struct.Span.html)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Span { 
+    pub lo: Position,
+    pub hi: Position, 
+}
+impl Display for Span { 
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.lo == self.hi { 
+            f.write_fmt(format_args!("i={}", self.lo))
+        } else { 
+            f.write_fmt(format_args!("i=[{},{}]", self.lo, self.hi))
+        }
+    }
+}
+impl From<Position> for Span { 
+    fn from(pos: Position) -> Self {
+        Self { 
+            lo: pos, 
+            hi: pos, 
+        }
+    }
+}
+
+
 
 #[allow(clippy::upper_case_acronyms)]
-enum Unit { 
+enum UnitKind { 
+    /// A single `char`, presumed to have a length of 1 
     Char(char), 
-    StringLiteral(String), 
+
+    /// A string literal - contains its decoded contents, as well as the index **after** the closing quote 
+    /// 
+    /// We have to track the end index separately since this becomes a proper token 
+    StringLiteral(String, Index), 
 
     /// Explicitly a chunk type at this level 
     /// This also includes comments for now 
     Whitespace,
 
+    /// End-of-file
     EOF
+}
+
+struct Unit { 
+    kind: UnitKind, 
+    index: Index, 
+}
+impl Unit { 
+    fn get_end(&self) -> Position { 
+        match self.kind { 
+            UnitKind::StringLiteral(_, end) => Position(end), 
+            _ => Position(self.index + 1), 
+        }
+    }
 }
 
 /// The first stage of the lexer: a wrapper around a raw `Chars` stream.  
@@ -31,35 +94,51 @@ enum Unit {
 struct UnitStream<'a> { 
     chars: Chars<'a>,
     peeked: VecDeque<char>,
-    position: Position,
+
+    index: Index,
+
+    /// This is the ordered set of indices that have newline characters.
+    /// 
+    /// (line, col) positions can be found by looking for the last newline before any given index, and subtracting
+    pub newlines: Vec<Index>, 
 }
 impl<'a> UnitStream<'a> { 
     fn new(chars: Chars<'a>) -> Self { 
         Self { 
             chars, 
             peeked: VecDeque::new(),
-            position: Position { line: 0, col: 0 }
+            index: 0, 
+            newlines: Vec::new(), 
         }
     }
 
-    fn position(&self) -> Position { self.position }
+    fn backtrack(&mut self, ch: char) { 
+        self.index -= 1; 
+        self.peeked.push_back(ch); 
+    }
 
-    //TAG: POSITION_DRIFT
-    // The position here doesn't account for backtracking - that's a later problem
-    // https://veneto.notion.site/Position-drifts-in-lexer-c98e2380f3f646d891f2da09f75f5999
+    fn read_next(&mut self, peek: bool) -> Option<char> { 
+        let i = self.index + 1; 
+        let ch = self.chars.next(); 
+
+        if let Some('\n') = ch { 
+            self.newlines.push(i); 
+        }
+
+        if let Some(ch) = ch { 
+            if peek { 
+                self.peeked.push_back(ch)
+            } else { 
+                self.index = i; 
+            }
+        }
+
+        ch
+    }
 
     /// Takes the next character, from either the queue or the source stream.
     fn inner_next(&mut self) -> Option<char> { 
-        let next = self.peeked.pop_front().or_else(|| self.chars.next());
-        if let Some(ch) = next { 
-            if ch == '\n' { 
-                self.position.line += 1;
-                self.position.col = 0;
-            } else { 
-                self.position.col += 1; 
-            }
-        }
-        next
+        self.peeked.pop_front().or_else(|| self.read_next(false))
     }
 
     /// Peeks the next character, without advancing the stream.
@@ -69,15 +148,7 @@ impl<'a> UnitStream<'a> {
     fn inner_peek(&mut self) -> Option<char> { 
         match self.peeked.front() { 
             Some(ch) => Some(*ch), 
-            None => { 
-                match self.chars.next() { 
-                    None => None, 
-                    Some(ch) => { 
-                        self.peeked.push_back(ch);
-                        Some(ch) 
-                    }
-                }
-            }
+            None => self.read_next(true), 
         }
     }
 
@@ -92,7 +163,7 @@ impl<'a> UnitStream<'a> {
                 Some(ch) => { 
                     if predicate(ch) { continue }
                     else { 
-                        self.peeked.push_back(ch); 
+                        self.backtrack(ch); 
                         break
                     }
                 }
@@ -108,7 +179,7 @@ impl<'a> UnitStream<'a> {
             match self.inner_next() { 
                 None => return Err(ParseError{
                     kind: ParseErrorKind::Unexpected(TokenKind::EOF),
-                    position: self.position,
+                    span: Position(self.index).into(),
                     backtrace: Backtrace::capture(),
                 }),
                 Some(ch) => { 
@@ -127,7 +198,7 @@ impl<'a> UnitStream<'a> {
             match self.inner_next() { 
                 None => return Err(ParseError{
                     kind: ParseErrorKind::Unexpected(TokenKind::EOF),
-                    position: self.position,
+                    span: Position(self.index).into(),
                     backtrace: Backtrace::capture(),
                 }),
                 Some(ch) => { 
@@ -153,21 +224,32 @@ impl<'a> UnitStream<'a> {
         else { false }
     }
 
+    fn make_unit(&self, kind: UnitKind) -> Unit { 
+        Unit { 
+            index: self.index,
+            kind
+        }
+    }
+
     pub fn next(&mut self) -> ParseResult<Unit> { 
         match self.inner_next() { 
-            None => Ok(Unit::EOF), 
+            None => Ok(self.make_unit(UnitKind::EOF)), 
             Some(ch) => { 
                 if ch.is_whitespace() { 
                     self.skip_while(|ch| ch.is_whitespace());
-                    Ok(Unit::Whitespace)
+                    Ok(self.make_unit(UnitKind::Whitespace))
                 }
                 else if ch == '"' { 
                     // Handle string literals. 
                     // If we add escaping, it'll happen here
                     //TAG: ESCAPING https://veneto.notion.site/Escaping-in-string-literals-d76caa72c65546a09ce0e668025f36bc
-                    Ok(Unit::StringLiteral(
-                        self.take_up_to('"')?
-                    ))
+
+                    let contents = self.take_up_to('"')?; 
+
+                    Ok(self.make_unit(UnitKind::StringLiteral(
+                        contents,
+                        self.index, // The index after `take_up_to` 
+                    )))
                 }
                 else if ch == '/' { 
                     // Check for comments
@@ -181,7 +263,7 @@ impl<'a> UnitStream<'a> {
                         let _ = self.skip_past('\n');
 
                         self.skip_while(|ch| ch.is_whitespace());
-                        Ok(Unit::Whitespace)
+                        Ok(self.make_unit(UnitKind::Whitespace))
                     }
                     else if self.check_for('*') { 
                         // If the cursor is at a `/*`, this is a block comment.
@@ -193,27 +275,21 @@ impl<'a> UnitStream<'a> {
                         }
 
                         self.skip_while(|ch| ch.is_whitespace());
-                        Ok(Unit::Whitespace)
+                        Ok(self.make_unit(UnitKind::Whitespace))
                     }
                     else { 
                         // No `/` or `*` was found after the first `/`, so this is not a comment.
                         // Return the character as normal
-                        Ok(Unit::Char(ch))
+                        Ok(self.make_unit(UnitKind::Char(ch)))
                     }
 
                 }
                 else { 
-                    Ok(Unit::Char(ch))
+                    Ok(self.make_unit(UnitKind::Char(ch)))
                 }
             }
         }
     }
-}
-
-/// Private wrapper struct to ensure that the `RawTokenStream` doesn't lose its position for queued units 
-struct UnitCursor { 
-    unit: Unit, 
-    position: Position, 
 }
 
 
@@ -221,7 +297,7 @@ struct UnitCursor {
 /// On top of the output from the first stage, this coalesces character types into single tokens. 
 struct RawTokenStream<'a> { 
     stream: UnitStream<'a>,
-    peeked: VecDeque<UnitCursor>,
+    peeked: VecDeque<Unit>,
 }
 impl<'a> RawTokenStream<'a> { 
 
@@ -233,34 +309,46 @@ impl<'a> RawTokenStream<'a> {
     }
 
     /// Takes the next character, from either the queue or the source stream.
-    fn inner_next(&mut self) -> ParseResult<UnitCursor> { 
+    fn inner_next(&mut self) -> ParseResult<Unit> { 
         match self.peeked.pop_front() { 
             Some(t) => Ok(t), 
-            None => self.stream.next().map(|unit| UnitCursor { unit, position: self.stream.position() }),
+            None => self.stream.next(),
         }
     }
 
-    /// Starting with the given `starting` char, this takes characters from the stream while they match `predicate`,
-    /// returning the captured string once they stop matching the `predicate`.
-    /// 
-    /// This requeues the first non-matching character, 
-    /// so the cursor effectively remains between the captured sequence and the rest of the stream. 
-    fn take_while(&mut self, starting: char, predicate: fn(char) -> bool) -> ParseResult<String> { 
-        let mut str = String::new();
-        str.push(starting);
+    fn backtrack(&mut self, unit: Unit) { 
+        self.peeked.push_back(unit);
+    }
+
+    fn consume(
+        &mut self, 
+        first_index: Index, 
+        first_char: char, 
+        kind: fn(String) -> TokenKind, 
+        predicate: fn(char) -> bool
+    ) -> ParseResult<Token> { 
+        let mut str = String::new(); 
+        str.push(first_char); 
 
         loop { 
             let next = self.inner_next()?; 
 
-            match next.unit { 
-                Unit::Char(ch) if predicate(ch) => { 
+            match next.kind { 
+                UnitKind::Char(ch) if predicate(ch) => { 
                     str.push(ch); 
-                    continue
+                    continue 
                 },
 
-                _ => {
-                    self.peeked.push_back(next);
-                    return Ok(str)
+                _ => { 
+                    let hi = next.get_end();
+                    self.backtrack(next); 
+                    return Ok(Token { 
+                        kind: kind(str), 
+                        span: Span { 
+                            lo: Position(first_index),
+                            hi, 
+                        }
+                    })
                 }
             }
         }
@@ -270,81 +358,139 @@ impl<'a> RawTokenStream<'a> {
 
         loop { 
             let next = self.inner_next()?;
-            let position = next.position;
 
-            match next.unit { 
-                Unit::Whitespace => continue, 
-                Unit::EOF => return Ok(Token { kind: TokenKind::EOF, position }), 
-                Unit::StringLiteral(s) => return Ok(Token { kind: TokenKind::StringLiteral(s), position }),
-                Unit::Char(c) => { 
+            match next.kind { 
+                UnitKind::Whitespace => continue, 
+                UnitKind::EOF => return Ok(Token { 
+                    kind: TokenKind::EOF, 
+                    span: Position(next.index).into(),
+                }), 
+
+                UnitKind::StringLiteral(contents, end) => {
+                    return Ok(Token{ 
+                        kind: TokenKind::StringLiteral(contents),
+                        span: Span { 
+                            lo: Position(next.index),
+                            hi: Position(end), 
+                        },
+                    })
+                },
+
+                UnitKind::Char(c) => { 
                     if c.is_alphabetic() { 
-                        return Ok(Token { 
-                            kind: TokenKind::Word(
-                                self.take_while(c, |ch| ch.is_alphanumeric() || ch == '_')?
-                            ), 
-                            position
-                        })
+                        return self.consume(
+                            next.index, 
+                            c, 
+                            TokenKind::Word, 
+                            |ch| ch.is_alphanumeric() || ch == '_'
+                        )
                     }
                     else if c.is_numeric() { 
-                        return Ok(Token { 
-                            kind: TokenKind::Number(self.take_while(c, |ch| ch.is_numeric())?), 
-                            position
-                        })
+                        return self.consume(
+                            next.index, 
+                            c, 
+                            TokenKind::Number, 
+                            |ch| ch.is_numeric()
+                        )
                     }
                     else if c.is_ascii_punctuation() { 
 
-                        // We can't just use `take_while` here because multi-char punctuations can be right next to each other
-                        // We also can't just return the first one we find, because some punctuations are substrings of another
-                        // (notably, PathSeparator :: vs Colon :)
-
-                        let mut word = String::new(); 
-                        word.push(c); 
-
                         /*
+                            We can't just use `consume` here because multi-char punctuations can be right next to each other
+                            We also can't just return the first one we find, because some punctuations are substrings of another
+                            (notably, PathSeparator `::` vs Colon `:`)
+
                             So the way we do this is to process the entire word and keep track of our longest match.
                             We have a list so that we can backtrack if we end up overshooting the longest match,
                             and it's mutable so that it can be reset every time we have a new match. 
                          */
 
-                        let mut match_longest : Option<Token> = Punctuation::from_str(&word).ok().map(|op| Token { 
-                            kind: TokenKind::Punctuation(op),
-                            position,
-                        });
-                        let mut match_backtrack = Vec::<UnitCursor>::new();
+                        // Lol we have another `next` below so it gets confusing
+                        let first = next; 
+                        let first_index = first.index; 
 
-                        // Arbitrary limit - this could be totally unnecesssary but it's here for now 
-                        let size_limit = 50;
-                        let mut size_i = 0;
+                        let mut word = String::new(); 
+                        let mut last_position = first.get_end();
+
+                        let mut match_longest : Option<Token> = None; 
+                        let mut match_backtrack : Vec<Unit> = Vec::new(); 
+
+                        // This tries to process an incoming unit as punctuation.  
+                        // If the unit is not a valid punctuation character, add it to the `backtrack` and return false.
+                        // Otherwise, process it (see below) and return true 
+                        let mut try_punct = |unit: Unit| -> bool{ 
+                            /*
+                                This is kinda awkward
+                                We need the `Unit` here so that we can push to the backtrack queue 
+                                But we have to extract it with the below bindings
+                             */
+                            let UnitKind::Char(ch) = unit.kind else { 
+                                match_backtrack.push(unit);
+                                return false; 
+                            };
+                            if !ch.is_ascii_punctuation() { 
+                                match_backtrack.push(unit);
+                                return false; 
+                            }
+
+                            // Here we update our `word` and `last_position` 
+                            word.push(ch); 
+                            last_position = unit.get_end(); 
+
+                            if let Ok(p) = Punctuation::from_str(&word) { 
+                                // If we have a new longest match, replace the previous match and clear the backtrack queue
+                                
+                                match_longest = Some(Token { 
+                                    kind: TokenKind::Punctuation(p), 
+                                    span: Span { 
+                                        lo: Position(first_index), 
+                                        hi: unit.get_end(), 
+                                    }
+                                });
+
+                                match_backtrack = Vec::new(); 
+                            }
+                            else { 
+                                // Otherwise, add it to the backtrack queue but keep moving 
+                                match_backtrack.push(unit); 
+                            }
+
+                            true
+                        };
+
+                        // Here we try the very first unit we found,
+                        // This should always be `true` since we verified those conditions to get to this point,
+                        //  but we `assert!` on it just to keep ourselves sane 
+                        let first_res = try_punct(first); 
+                        assert!(first_res, "first char must be a valid punctuation");
+ 
+                        let mut size_i : u8 = 0;
 
                         loop { 
+                            // We have a hardcoded limit on how long the longest punctuation is, 
+                            // and there's no sense looking past that.  
+                            // (See `LONGEST_PUNCTUATION` docs idk)
                             size_i += 1;
-                            if size_i > size_limit { 
-                                return Err(ParseError { 
-                                    kind: ParseErrorKind::WordTooLong, 
-                                    position,
-                                    backtrace: Backtrace::capture(), 
-                                })
-                            }
+                            if size_i > LONGEST_PUNCTUATION { break }
+
 
                             let next = self.inner_next()?; 
 
-                            match next.unit { 
-                                Unit::Char(ch) if ch.is_ascii_punctuation() => { 
-                                    word.push(ch); 
-                                    if let Ok(op) = Punctuation::from_str(&word) { 
-                                        match_longest = Some(Token{ kind: TokenKind::Punctuation(op), position });
-                                        match_backtrack = Vec::new(); 
-                                    } else { 
-                                        match_backtrack.push(next); 
-                                    }
-                                },
+                            // Now we keep repeating the process for each subsequent `Unit`.
+                            // As soon as we find one that's not a valid punctuation character,
+                            // `try_punct` will return `false`, so we know to break 
 
-                                _ => { 
-                                    match_backtrack.push(next); 
-                                    break
-                                }
+                            if try_punct(next) { 
+                                continue
+                            } else { 
+                                break
                             }
                         }
+
+                        // Now we're done looking for characters. 
+                        // If we have a valid match, that's our answer.  
+                        //  It gets returned, after we requeue everything that we needed to backtrack on earlier
+                        // 
 
                         if let Some(token) = match_longest { 
 
@@ -354,15 +500,22 @@ impl<'a> RawTokenStream<'a> {
                         } else { 
                             return Err(ParseError { 
                                 kind: ParseErrorKind::UnrecognizedPunctuation(word), 
-                                position,
+                                span: Span { 
+                                    lo: Position(first_index),
+                                    hi: last_position, 
+                                },
                                 backtrace: Backtrace::capture(),
                             })
                         }
                     }
+
                     else { 
+                        // Here, we have not matched any of our basic character types (number, word, punctuation),
+                        // so we don't know what to do.
+                        // We have an error for that    
                         return Err(ParseError { 
                             kind: ParseErrorKind::UnknownCharacterType, 
-                            position,
+                            span: Position(next.index).into(),
                             backtrace: Backtrace::capture(),
                         })
                     }

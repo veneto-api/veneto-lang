@@ -16,7 +16,9 @@ mod lexer_tests;
 
 use std::{backtrace::Backtrace, fmt::Debug};
 
-use self::{tokens::{Punctuation, Position, TokenKind, Keyword, Terminal}};
+use tokens::{Punctuation, TokenKind, Keyword, Terminal};
+
+use self::lexer::Span;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseErrorKind { 
@@ -33,12 +35,6 @@ pub enum ParseErrorKind {
 
     /// The lexer attempted to process a punctuation word that does not correspond to a valid `Punctuation` 
     UnrecognizedPunctuation(String),
-
-    /// The lexer hit an arbitrary limit while attempting to resolve a word
-    /// (namely a punctuation sequence).
-    /// 
-    /// This might not be necessary but it felt uncomfortable not having one, idk 
-    WordTooLong, 
 
     /// A miscellaneous semantic error while parsing,
     /// described by its associated message.
@@ -65,7 +61,7 @@ pub enum ParseErrorKind {
 
 pub struct ParseError { 
     kind: ParseErrorKind,
-    position: Position,
+    span: Span,
     backtrace: Backtrace,
 }
 
@@ -74,7 +70,7 @@ pub type ParseResult<T> = Result<T, ParseError>;
 impl Debug for ParseError { 
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(
-            format_args!("ParseError at {}:{}: {:?}\n{}", self.position.line, self.position.col, self.kind, self.backtrace)
+            format_args!("ParseError at {}: {:?}\n{}", self.span, self.kind, self.backtrace)
         )
     }
 }

@@ -7,12 +7,12 @@ use super::tokens::Punctuation;
 //
 // Helpers
 //
-// These should probably be macros but I'm not comfortable with those yet 🥴
+// Some of these are used in other tests to ensure that the parsing functions stop in the appropriate places 
 
 pub fn token_stream(str: &str) -> TokenStream { 
     TokenStream::new(str.chars()) 
 }
-pub fn assert_identifier(stream: &mut TokenStream, val: &str) { 
+fn assert_identifier(stream: &mut TokenStream, val: &str) { 
     assert_eq!(stream.next().unwrap().as_identifier().unwrap(), val); 
 }
 pub fn assert_eof(stream: &mut TokenStream) { 
