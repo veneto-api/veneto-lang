@@ -15,7 +15,7 @@ pub fn token_stream(str: &str) -> TokenStream {
     TokenStream::new(str.chars()) 
 }
 fn assert_identifier(stream: &mut TokenStream, val: &str) { 
-    assert_eq!(stream.next().unwrap().as_identifier().unwrap(), val); 
+    assert_eq!(stream.next().unwrap().as_identifier().unwrap().text, val); 
 }
 pub fn assert_eof(stream: &mut TokenStream) { 
     assert_eq!(stream.next().unwrap().kind, TokenKind::EOF); 
@@ -27,9 +27,9 @@ pub fn assert_keyword(stream: &mut TokenStream, expected: Keyword) {
     stream.next().unwrap().expect_keyword(expected).unwrap()
 }
 
-//
-// Tests
-//
+// //
+// // Tests
+// //
 
 
 #[test]
@@ -37,15 +37,15 @@ fn words() {
     let mut stream = token_stream("asdf jkl ree");
 
     let token = stream.next().unwrap(); 
-    assert_eq!(token.as_identifier().unwrap(), "asdf"); 
+    assert_eq!(token.as_identifier().unwrap().text, "asdf"); 
     assert_eq!(token.span, Span { lo: Position(0), hi: Position(4) });
 
     let token = stream.next().unwrap(); 
-    assert_eq!(token.as_identifier().unwrap(), "jkl"); 
+    assert_eq!(token.as_identifier().unwrap().text, "jkl"); 
     assert_eq!(token.span, Span { lo: Position(5), hi: Position(8) });
 
     let token = stream.next().unwrap(); 
-    assert_eq!(token.as_identifier().unwrap(), "ree"); 
+    assert_eq!(token.as_identifier().unwrap().text, "ree"); 
     assert_eq!(token.span, Span { lo: Position(9), hi: Position(12) });
 
     assert_eof(&mut stream);
@@ -65,15 +65,15 @@ fn line_comment() -> ParseResult<()> {
     let mut stream = token_stream("asdf// jsdklf \"heee\" hoo raaa\n\nfoobar endofline");
 
     let next = stream.next().unwrap();
-    assert_eq!(next.as_identifier().unwrap(), "asdf");
+    assert_eq!(next.as_identifier().unwrap().text, "asdf");
     assert_eq!(next.span, Span { lo: Position(0), hi: Position(4) });
 
     let next = stream.next().unwrap();
-    assert_eq!(next.as_identifier().unwrap(), "foobar");
+    assert_eq!(next.as_identifier().unwrap().text, "foobar");
     assert_eq!(next.span, Span { lo: Position(31), hi: Position(37) });
 
     let next = stream.next().unwrap();
-    assert_eq!(next.as_identifier().unwrap(), "endofline");
+    assert_eq!(next.as_identifier().unwrap().text, "endofline");
     assert_eq!(next.span, Span { lo: Position(38), hi: Position(47) });
 
     assert_eq!(stream.stream.stream.newlines, vec![ 29, 30 ]);
@@ -87,11 +87,11 @@ fn block_comment() {
     let mut stream = token_stream("asdf/* eee\neeeass//\n*\n/*\n*/   end");
 
     let next = stream.next().unwrap();
-    assert_eq!(next.as_identifier().unwrap(), "asdf");
+    assert_eq!(next.as_identifier().unwrap().text, "asdf");
     assert_eq!(next.span, Span { lo: Position(0), hi: Position(4) });
 
     let next = stream.next().unwrap();
-    assert_eq!(next.as_identifier().unwrap(), "end");
+    assert_eq!(next.as_identifier().unwrap().text, "end");
     assert_eq!(next.span, Span { lo: Position(30), hi: Position(33) });
 
     assert_eq!(stream.stream.stream.newlines, vec![ 10, 19, 21, 24 ]);
@@ -104,19 +104,19 @@ fn spacing() {
     let mut stream = token_stream("aaa\neee   \n\t  foo  bar \n");
 
     let next = stream.next().unwrap();
-    assert_eq!(next.as_identifier().unwrap(), "aaa");
+    assert_eq!(next.as_identifier().unwrap().text, "aaa");
     assert_eq!(next.span, Span { lo: Position(0), hi: Position(3) });
 
     let next = stream.next().unwrap();
-    assert_eq!(next.as_identifier().unwrap(), "eee");
+    assert_eq!(next.as_identifier().unwrap().text, "eee");
     assert_eq!(next.span, Span { lo: Position(4), hi: Position(7) });
 
     let next = stream.next().unwrap();
-    assert_eq!(next.as_identifier().unwrap(), "foo");
+    assert_eq!(next.as_identifier().unwrap().text, "foo");
     assert_eq!(next.span, Span { lo: Position(14), hi: Position(17) });
 
     let next = stream.next().unwrap();
-    assert_eq!(next.as_identifier().unwrap(), "bar");
+    assert_eq!(next.as_identifier().unwrap().text, "bar");
     assert_eq!(next.span, Span { lo: Position(19), hi: Position(22) });
 
     assert_eq!(stream.stream.stream.newlines, vec![ 3, 10,  23]);

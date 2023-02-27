@@ -30,6 +30,12 @@ pub struct Token {
     pub span: Span, 
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Identifier { 
+    pub text: String, 
+    pub span: Span, 
+}
+
 
 impl Token {
 
@@ -142,18 +148,18 @@ impl Token {
     }
 
     /// Returns the token's value if this token is a valid identifier, otherwise `None`
-    pub fn as_identifier(&self) -> Option<String> { 
+    pub fn as_identifier(&self) -> Option<Identifier> { 
         if let TokenKind::Word(str) = self.kind.clone() { 
-            Some(str)
+            Some(Identifier { text: str, span: self.span })
         } else { 
             None
         }
     }
 
     /// Returns this token value if this token is a valid identifier, otherwise an `ExpectedIdentifier` error.
-    pub fn try_as_identifier(&self) -> ParseResult<String> { 
+    pub fn try_as_identifier(&self) -> ParseResult<Identifier> { 
         if let TokenKind::Word(str) = self.kind.clone() { 
-            Ok(str)
+            Ok(Identifier { text: str, span: self.span })
         } else { 
             Err(ParseError { 
                 kind: ParseErrorKind::ExpectedIdentifier, 
@@ -337,9 +343,6 @@ impl Keyword {
 /// 
 /// `Punctuation` has to be separate from `Word` because of the different lexing rules,
 /// but this enum exists for convenience in cases when the parser needs to handle both at the same time
-/// 
-/// This is arguably an abuse of notation, but it simply refers to a literally-defined symbol,
-/// rather than a variable expression like an identifier.  
 #[derive(PartialEq, Eq, Debug)]
 pub enum Terminal { 
     Punctuation(Punctuation),

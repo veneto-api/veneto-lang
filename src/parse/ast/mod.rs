@@ -1,4 +1,4 @@
-use super::{lexer::TokenStream, ParseResult, tokens::{Terminal, Punctuation}};
+use super::{lexer::{TokenStream, Span}, ParseResult, tokens::{Terminal, Punctuation, Token}};
 
 /// This is parses common miscellaneous expressions.
 /// At the time, that's only generic identifiers, so maybe this module should be renamed.
@@ -61,12 +61,14 @@ pub trait Finishable where Self: std::marker::Sized{
     const INITIAL_TOKEN: Terminal; 
 
     /// Finish parsing this clause **after** the initial token. 
-    fn parse_finish(stream: &mut TokenStream) -> ParseResult<Self>; 
+    fn parse_finish(stream: &mut TokenStream, initial: Token) -> ParseResult<Self>; 
 }
 impl<T> Peekable for T where T: Finishable { 
     fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
-        if stream.peek_for_terminal(Self::INITIAL_TOKEN)? { 
-            Ok(Some(T::parse_finish(stream)?))
+        let peek = stream.peek()?;
+        if peek.as_terminal() == Some(Self::INITIAL_TOKEN) { 
+            let peek = stream.next()?;
+            Ok(Some(T::parse_finish(stream, peek)?))
         } else { 
             Ok(None) 
         }
@@ -74,8 +76,9 @@ impl<T> Peekable for T where T: Finishable {
 }
 impl<T> Expectable for T where T: Finishable { 
     fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
-        stream.next()?.expect_terminal(Self::INITIAL_TOKEN)?; 
-        T::parse_finish(stream)
+        let next = stream.next()?;
+        next.expect_terminal(Self::INITIAL_TOKEN)?; 
+        T::parse_finish(stream, next)
     }
 }
 
@@ -93,3 +96,16 @@ fn parse_list_into<T: Peekable>(vec: &mut Vec<T>, stream: &mut TokenStream) -> P
     
     Ok(())
 }
+
+#[derive(Debug)]
+pub struct Spanned<T> { 
+    node: T, 
+    span: Span, 
+}
+
+impl<T> PartialEq for Spanned<T> where T: PartialEq { 
+    fn eq(&self, other: &Self) -> bool {
+        self.node == other.node && self.span == other.span
+    }
+}
+impl<T> Eq for Spanned<T> where T: Eq {}

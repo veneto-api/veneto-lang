@@ -6,7 +6,7 @@ use std::{str::Chars, collections::VecDeque};
 use crate::parse::tokens::LONGEST_PUNCTUATION;
 
 use super::{ ParseResult, ParseErrorKind, ParseError };
-use super::tokens::{ Token, TokenKind, Punctuation, Keyword, Terminal };
+use super::tokens::{ Token, TokenKind, Punctuation, Keyword, Terminal, Identifier };
 
 
 pub type Index = u32; 
@@ -30,6 +30,15 @@ pub struct Span {
     pub lo: Position,
     pub hi: Position, 
 }
+impl Span { 
+    pub fn through(&self, last: Self) -> Self { 
+        Self { 
+            lo: self.lo,
+            hi: last.hi, 
+        }
+    }
+}
+
 impl Display for Span { 
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.lo == self.hi { 
@@ -575,7 +584,7 @@ impl<'a> TokenStream<'a> {
     /// Peek the next token from the stream.
     /// If it's a valid identifier, advance the cursor and return it.
     /// Otherwise, return `None`.  
-    pub fn peek_for_identifier(&mut self) -> ParseResult<Option<String>> { 
+    pub fn peek_for_identifier(&mut self) -> ParseResult<Option<Identifier>> { 
         match self.peek()?.as_identifier() { 
             Some(ident) => { 
                 self.next()?;
