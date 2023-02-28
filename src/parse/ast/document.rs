@@ -1,68 +1,68 @@
-use std::collections::HashMap;
-
-use crate::parse::{lexer::TokenStream, ParseResult, tokens::{Keyword, Punctuation, TokenKind}};
+use crate::{parse::{lexer::{TokenStream}, ParseResult, tokens::{Keyword, Punctuation, TokenKind, Identifier}}};
 
 use super::{types::Type, rc::ResourceClass, interfaces::InterfaceExpression, use_tree::UseTree, Expectable, Peekable, general::GenericIdentifier};
 
-#[allow(dead_code)]
+
 pub struct EntryPoint { 
     pub uri: String, 
     pub rc: GenericIdentifier, 
 }
 
-pub struct Document { 
-    pub imports : Vec<UseTree>, 
-    pub types: HashMap<String, Type>,
-    pub interfaces : HashMap<String, InterfaceExpression>, 
-    pub resource_classes : Vec<ResourceClass>, 
-    pub entry_points : Vec<EntryPoint>, 
+pub enum Node { 
+    Use(UseTree),
+    Type(Identifier, Type), 
+    Interface(Identifier, InterfaceExpression), 
+    ResourceClass(ResourceClass), 
+    EntryPoint(EntryPoint), 
 }
-impl Document { 
-    pub fn parse(mut stream: TokenStream) -> ParseResult<Self> { 
 
-        let mut doc = Self { 
-            imports: Vec::new(), 
-            types: HashMap::new(), 
-            interfaces: HashMap::new(), 
-            resource_classes: Vec::new(), 
-            entry_points: Vec::new(), 
-        };
+pub type Document = Vec<Node>; 
+
+impl Expectable for Document { 
+
+    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
+        let mut doc = Self::new(); 
 
         loop { 
+            if let Some(rc) = ResourceClass::parse_peek(stream)? { 
+                doc.push(Node::ResourceClass(rc));
+                continue;
+            }
 
-            if stream.peek_for_keyword(Keyword::Use)? { 
-                doc.imports.push(UseTree::parse_expect(&mut stream)?);
-            }
-            else if stream.peek_for_keyword(Keyword::Type)? { 
-                let name = stream.next()?.try_as_identifier()?; 
-                stream.next()?.expect_punctuation(Punctuation::Assign)?; 
-                let typ = Type::parse_expect(&mut stream)?; 
-                doc.types.insert(name, typ);
-            }
-            else if stream.peek_for_keyword(Keyword::Interface)? { 
-                let name = stream.next()?.try_as_identifier()?; 
-                stream.next()?.expect_punctuation(Punctuation::Assign)?; 
-                let int = InterfaceExpression::parse_expect(&mut stream)?; 
-                doc.interfaces.insert(name, int); 
-            }
-            else if let Some(rc) = ResourceClass::parse_peek(&mut stream)? { 
-                doc.resource_classes.push(rc);
-            }
-            else if stream.peek_for_keyword(Keyword::Entry)? { 
-                let uri = stream.next()?.try_as_string_literal()?; 
-                stream.next()?.expect_punctuation(Punctuation::Arrow)?; 
-                let rc = GenericIdentifier::parse_expect(&mut stream)?; 
-                doc.entry_points.push(EntryPoint { uri, rc })
-            }
-            else { 
-                let next = stream.next()?; 
-                if next.kind == TokenKind::EOF { 
-                    return Ok(doc)
-                } else { 
-                    return Err(next.as_err_unexpected())
+            let next = stream.next()?; 
+            match next.as_keyword() { 
+                Some(Keyword::Use) => doc.push(Node::Use(UseTree::parse_expect(stream)?)),
+
+                Some(Keyword::Type) => { 
+                    let name = stream.next()?.try_as_identifier()?; 
+                    stream.next()?.expect_punctuation(Punctuation::Assign)?; 
+                    let typ = Type::parse_expect(stream)?; 
+                    doc.push(Node::Type(name, typ))
+                },
+
+                Some(Keyword::Interface) => { 
+                    let name = stream.next()?.try_as_identifier()?; 
+                    stream.next()?.expect_punctuation(Punctuation::Assign)?; 
+                    let int = InterfaceExpression::parse_expect(stream)?; 
+                    doc.push(Node::Interface(name, int))
+                },
+
+                Some(Keyword::Entry) => { 
+                    let uri = stream.next()?.try_as_string_literal()?; 
+                    stream.next()?.expect_punctuation(Punctuation::Arrow)?; 
+                    let rc = GenericIdentifier::parse_expect(stream)?; 
+                    doc.push(Node::EntryPoint(EntryPoint { uri, rc }))
+                }
+                
+
+                _ => {
+                    if next.kind == TokenKind::EOF { 
+                        return Ok(doc)
+                    } else { 
+                        return Err(next.as_err_unexpected())
+                    }
                 }
             }
-
         }
 
     }
