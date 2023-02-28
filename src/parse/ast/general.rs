@@ -1,31 +1,26 @@
 use crate::parse::ParseResult;
-use crate::parse::lexer::{TokenStream, Span};
+use crate::parse::lexer::{TokenStream};
 use crate::parse::tokens::{Punctuation, Terminal, Token, Identifier};
 
-use super::{Peekable, Expectable, Finishable, Spanned};
+use super::{Peekable, Expectable, Finishable};
 
 /// This is an identifier that can accept generic parameters.
 #[derive(PartialEq, Eq, Debug)]
 pub struct GenericIdentifier { 
-    pub base: String, 
+    pub base: Identifier, 
     pub args: Option<GenericArgs>,
-    pub span: Span, 
 
     //TAG: RC_FLAGS
     // https://www.notion.so/veneto/RC-Flags-conditionals-c1ed70a794d14511b57e06d1798a62a8?pvs=4
 }
-pub type GenericArgs = Spanned<Vec<GenericIdentifier>>; 
+pub type GenericArgs = Vec<GenericIdentifier>; 
 
 impl GenericIdentifier { 
     fn parse_finish(stream: &mut TokenStream, base: Identifier) -> ParseResult<Self> { 
 
         let args = GenericArgs::parse_peek(stream)?; 
 
-        let span : Span; 
-        if let Some(ref args) = args { span = base.span.through(args.span); }
-        else { span = base.span; }
-
-        Ok(GenericIdentifier { base: base.text, args, span })
+        Ok(GenericIdentifier { base, args })
 
     }
 }
@@ -49,7 +44,7 @@ impl Expectable for GenericIdentifier {
 impl Finishable for GenericArgs { 
     const INITIAL_TOKEN: Terminal = Terminal::Punctuation(Punctuation::GenericOpen);
 
-    fn parse_finish(stream: &mut TokenStream, initial: Token) -> ParseResult<Self> {
+    fn parse_finish(stream: &mut TokenStream, _: Token) -> ParseResult<Self> {
         let mut args = Vec::new(); 
         loop { 
             if let Some(arg) = GenericIdentifier::parse_peek(stream)? {
@@ -59,10 +54,7 @@ impl Finishable for GenericArgs {
             let next = stream.next()?; 
             match next.as_punctuation() { 
                 Some(Punctuation::Comma) => continue,
-                Some(Punctuation::GenericClose) => return Ok(Spanned { 
-                    span: initial.span.through(next.span),
-                    node: args, 
-                }), 
+                Some(Punctuation::GenericClose) => return Ok(args), 
                 _ => return Err(next.as_err_unexpected())
             }
         }
@@ -70,8 +62,8 @@ impl Finishable for GenericArgs {
 }
 
 #[cfg(test)]
-mod test {
-    use crate::parse::{lexer_tests::{token_stream, assert_punctuation}, ParseResult, lexer::TokenStream, tokens::Punctuation, ast::Expectable};
+pub mod test {
+    use crate::parse::{lexer_tests::{token_stream, assert_punctuation}, ParseResult, lexer::{TokenStream}, tokens::Punctuation, ast::Expectable};
 
     use super::GenericIdentifier;
 
@@ -84,15 +76,15 @@ mod test {
 
     macro_rules! assert_gid {
         ($gid:ident, $base:literal) => { 
-            assert_eq!($gid.base, $base);
+            assert_eq!($gid.base.text, $base);
             assert_eq!($gid.args, None); 
         };
 
         ($gid:ident, $base:literal < $($params:tt),+ > ) => { 
-            assert_eq!($gid.base, $base);
+            assert_eq!($gid.base.text, $base);
             
             let args = $gid.args.unwrap();
-            let mut iter = args.node.iter(); 
+            let mut iter = args.iter(); 
             $(
                 let next = iter.next().unwrap();
                 assert_gid!(next, $params);
@@ -101,6 +93,18 @@ mod test {
         };
     }
 
+    macro_rules! assert_gid_base {
+        ($gid:ident: $base:literal @ $pos:literal) => {
+            assert_eq!($gid.base.text, $base);
+            assert_eq!($gid.base.span, $crate::parse::Span { 
+                lo: $crate::parse::lexer::Position($pos), 
+                hi: $crate::parse::lexer::Position(($pos + $base.len()).try_into().unwrap()) 
+            })
+        };
+    }
+
+    pub(crate) use assert_gid; 
+    pub(crate) use assert_gid_base; 
  
     #[test]
     fn simple() { 
@@ -124,23 +128,29 @@ mod test {
     #[test]
     fn complex() { 
         let (mut stream, gid) = parse_gid("foo<bar, baz<asdf, ree>, aaa>,").unwrap();
-        assert_eq!(gid.base, "foo");
+        assert_eq!(gid.base.text, "foo");
         
         let args = gid.args.unwrap();
-        let mut iter = args.node.iter(); 
+        let mut iter = args.iter(); 
         
-        assert_eq!(iter.next().unwrap().base, "bar"); 
+        assert_eq!(iter.next().unwrap().base.text, "bar"); 
 
         let next = iter.next().unwrap(); 
-        assert_eq!(next.base, "baz"); 
+        assert_eq!(next.base.text, "baz"); 
 
         let inner_args = next.args.as_ref().unwrap();
-        let mut inner_iter = inner_args.node.iter(); 
-        assert_eq!(inner_iter.next().unwrap().base, "asdf"); 
-        assert_eq!(inner_iter.next().unwrap().base, "ree");
+        let mut inner_iter = inner_args.iter(); 
+
+        let next = inner_iter.next().unwrap(); 
+        assert_gid_base!(next: "asdf" @ 13);
+
+        let next = inner_iter.next().unwrap(); 
+        assert_gid_base!(next: "ree" @ 19); 
+
         assert_eq!(inner_iter.next(), None); 
 
-        assert_eq!(iter.next().unwrap().base, "aaa"); 
+        let next = iter.next().unwrap(); 
+        assert_gid_base!(next: "aaa" @ 25); 
 
         assert_eq!(iter.next(), None); 
         assert_punctuation(&mut stream, Punctuation::Comma);

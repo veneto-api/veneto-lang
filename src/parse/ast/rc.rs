@@ -78,7 +78,7 @@ impl Peekable for ResourceClass {
                         return Err(err_ref.as_semantic_error("Resource classes cannot have modifiers if they are extended"))
                     }
                     else { 
-                        RCDeclaration::Extended(ident.base, GenericIdentifier::parse_expect(stream)?)
+                        RCDeclaration::Extended(ident.base.text, GenericIdentifier::parse_expect(stream)?)
                     }
     
                 }

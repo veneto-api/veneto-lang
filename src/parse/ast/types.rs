@@ -263,213 +263,192 @@ impl Peekable for Tuple {
 }
 
 
-// #[cfg(test)]
-// pub mod test {
-//     use crate::parse::ast::Expectable;
-//     use crate::parse::{ParseResult, lexer::TokenStream, lexer_tests::{token_stream, assert_punctuation}, ParseErrorKind};
-//     use super::GenericIdentifier; 
-//     use crate::parse::tokens::Punctuation; 
+#[cfg(test)]
+pub mod test {
+    use core::panic;
 
-//     use super::{Type, TypeKind, StructField};
+    use super::super::general::test::{assert_gid, assert_gid_base};
+    use crate::parse::ast::Expectable;
+    use crate::parse::{ParseResult, lexer::TokenStream, lexer_tests::{token_stream, assert_punctuation}, ParseErrorKind};
+    use crate::parse::tokens::{Punctuation}; 
+
+    use super::{Type, TypeKind};
  
-//     // Yeehaw! This is gonna be a big one 
+    // Yeehaw! This is gonna be a big one 
 
-//     fn parse_type(input: &str) -> ParseResult<(TokenStream, Type)> { 
-//         let mut stream = token_stream(input); 
-//         let typ = Type::parse_expect(&mut stream);
-//         typ.map(|x| (stream, x))
-//     }
-//     fn assert_type(input: &str, expected: Type) { 
-//         let (_, typ) = parse_type(input).unwrap(); 
-//         assert_eq!(typ, expected); 
-//     }
-//     fn assert_type_kind(input: &str, expected: TypeKind) { 
-//         let (_, typ) = parse_type(input).unwrap();
-//         assert_eq!(typ.kind, expected);
-//     }
+    fn parse_type(input: &str) -> ParseResult<(TokenStream, Type)> { 
+        let mut stream = token_stream(input); 
+        let typ = Type::parse_expect(&mut stream);
+        typ.map(|x| (stream, x))
+    }
 
-//     pub fn make_simple_type(kind: TypeKind) -> Type { 
-//         Type { 
-//             kind,  
-//             optional: false, 
-//             in_plus: None, 
-//             out_plus: None, 
-//         }
-//     }
+    pub fn make_simple_type(kind: TypeKind) -> Type { 
+        Type { 
+            kind,  
+            optional: false, 
+            in_plus: None, 
+            out_plus: None, 
+        }
+    }
 
-//     #[test]
-//     fn simple_ident() { 
-//         let (mut stream, typ) = parse_type("asdf@").unwrap();
-//         assert_eq!(typ.kind, TypeKind::Identifier(GenericIdentifier::simple("asdf")));
-//         assert_punctuation(&mut stream, Punctuation::SpecialType);
-//     }
+    macro_rules! assert_type_gid {
+        ($typ:expr, $gid:tt) => {
+            let TypeKind::Identifier(gid) = $typ.kind else { panic!("Expected GID") };
+            assert_gid!(gid, $gid);
+        };
+    }
 
-//     #[test]
-//     fn struct_eof() { 
-//         let res = parse_type("{ asdf: eee ");
-//         assert!(matches!(res.unwrap_err().kind, ParseErrorKind::Unexpected(_)))
-//     }
+    #[test]
+    fn simple_ident() { 
+        let (mut stream, typ) = parse_type("asdf@").unwrap();
+        assert_type_gid!(typ, "asdf"); 
+        assert_punctuation(&mut stream, Punctuation::SpecialType);
+    }
 
-//     #[test]
-//     fn simple_struct() { 
-//         assert_type_kind("{ foo: bar }", TypeKind::Struct(vec![ 
-//             StructField { 
-//                 name: "foo".to_string(), 
-//                 typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("bar"))),
-//             }
-//         ]))
-//     }
+    #[test]
+    fn struct_eof() { 
+        let res = parse_type("{ asdf: eee ");
+        assert!(matches!(res.unwrap_err().kind, ParseErrorKind::Unexpected(_)))
+    }
 
-//     #[test]
-//     fn simple_array() { 
-//         assert_type_kind("foo[]", TypeKind::Array(Box::new(
-//             make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("foo")))
-//         )));
-//     }
+    #[test]
+    fn simple_struct() { 
+        let (_, typ) = parse_type("{ foo: bar }").unwrap(); 
+        let TypeKind::Struct(s) = typ.kind else { panic!("Expected Struct") }; 
 
-//     #[test] 
-//     fn tuple_generic() { 
-//         assert_type_kind("[ foo, bar<baz> ]", TypeKind::Tuple(
-//             vec![ 
-//                 make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("foo"))),
-//                 make_simple_type(
-//                     TypeKind::Identifier(GenericIdentifier { 
-//                         base: "bar".to_string(), 
-//                         args: vec![ GenericIdentifier::simple("baz") ]
-//                     })
-//                 ),
-//             ]
-//         ));
-//     }
+        let mut iter = s.into_iter(); 
 
-//     #[test] 
-//     fn generic_double_array() { 
-//         assert_type_kind("foo<bar<asdf, ree>>[][]", TypeKind::Array( Box::new(
-//             make_simple_type(
-//                 TypeKind::Array(Box::new(
-//                     make_simple_type(TypeKind::Identifier(
-//                         GenericIdentifier { 
-//                             base: "foo".to_string(), 
-//                             args: vec![
-//                                 GenericIdentifier { 
-//                                     base: "bar".to_string(), 
-//                                     args: vec![ 
-//                                         GenericIdentifier::simple("asdf"),
-//                                         GenericIdentifier::simple("ree"),
-//                                     ]
-//                                 }
-//                             ]
-//                         }
-//                     ))
-//                 ))
-//             )
-//         )))
-//     }
+        let field = iter.next().unwrap(); 
+        assert_eq!(field.name.text, "foo"); 
+        assert_type_gid!(field.typ, "bar"); 
+    }
 
-//     #[test]
-//     fn struct_array() { 
-//         assert_type_kind("{ foo: bar }[]", TypeKind::Array(Box::new(
-//             make_simple_type(TypeKind::Struct(vec![ StructField { 
-//                 name: "foo".to_string(),
-//                 typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("bar"))),
-//             }]))
-//         )))
-//     }
+    #[test]
+    fn simple_array() { 
+        let (_, typ) = parse_type("foo[]").unwrap(); 
+        let TypeKind::Array(inner) = typ.kind else { panic!("Expected Array") };
 
-//     #[test]
-//     fn tuple_array() { 
-//         assert_type_kind("[foo][]", TypeKind::Array(Box::new(
-//             make_simple_type(TypeKind::Tuple(vec![ 
-//                 make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("foo")))
-//             ]))
-//         )))
-//     }
+        assert_type_gid!(inner, "foo"); 
+    }
 
-//     #[test] 
-//     fn complex_struct() { 
-//         assert_type_kind("{ foo: bar[], baz: generic<type> }", TypeKind::Struct(vec! [ 
-//             StructField { 
-//                 name: "foo".to_string(), 
-//                 typ: make_simple_type(TypeKind::Array(Box::new(
-//                     make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("bar")))
-//                 ))),
-//             },
-//             StructField { 
-//                 name: "baz".to_string(), 
-//                 typ: make_simple_type(TypeKind::Identifier(GenericIdentifier{ 
-//                     base: "generic".to_string(), 
-//                     args: vec![ GenericIdentifier::simple("type") ]
-//                 })),
-//             }
-//         ]))
-//     }
+    #[test] 
+    fn tuple_generic() { 
 
-//     #[test]
-//     fn struct_mod_out() { 
-//         assert_type("{ foo: bar } out + {asdf: ree}", Type { 
-//             kind: TypeKind::Struct(vec![ StructField { 
-//                 name: "foo".to_string(), 
-//                 typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("bar"))),
-//             }]),
+        let (_, typ) = parse_type("[ foo, bar<baz> ]").unwrap();
+        let TypeKind::Tuple(tup) = typ.kind else { panic!("Expected tuple"); };
 
-//             optional: false, 
+        let mut iter = tup.into_iter(); 
 
-//             in_plus: None, 
-//             out_plus: Some(vec![ StructField { 
-//                 name: "asdf".to_string(), 
-//                 typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("ree"))),
-//             }])
-//         })
-//     }
-//     #[test]
-//     fn struct_mod_both() { 
-//         assert_type("{ foo: bar } out + {asdf: ree} in + {}", Type { 
-//             kind: TypeKind::Struct(vec![ StructField { 
-//                 name: "foo".to_string(), 
-//                 typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("bar"))),
-//             }]),
+        let next = iter.next().unwrap(); 
+        let TypeKind::Identifier(gid) = next.kind else { panic!("Expected GID") };
+        assert_gid!(gid, "foo"); 
 
-//             optional: false, 
+        let next = iter.next().unwrap(); 
+        let TypeKind::Identifier(gid) = next.kind else { panic!("Expected GID") }; 
+        assert_gid!(gid, "bar" < "baz" >); 
+    }
 
-//             in_plus: Some(vec![ ]), 
-//             out_plus: Some(vec![ StructField { 
-//                 name: "asdf".to_string(), 
-//                 typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("ree"))),
-//             }])
-//         })
-//     }
+    #[test] 
+    fn generic_double_array() { 
+        let (_, typ) = parse_type("foo<bar<asdf, ree>>[][]").unwrap(); 
 
-//     #[test]
-//     fn struct_mod_duplicates() { 
-//         let res = parse_type("{ foo: bar } out + { foo: bar } out + {foo : bar}");
-//         assert!(matches!(res.unwrap_err().kind, ParseErrorKind::SemanticDuplicate));
+        let TypeKind::Array(inner) = typ.kind else { panic!("Expected outer array") };
+        let TypeKind::Array(inner) = inner.kind else { panic!("Expected inner array") }; 
+        let TypeKind::Identifier(gid) = inner.kind else { panic!("Expected GID") };
 
-//         let res = parse_type("{ foo: bar } out + { foo: bar } in + {foo : bar} out + {}");
-//         assert!(matches!(res.unwrap_err().kind, ParseErrorKind::SemanticDuplicate));
-//     }
+        assert_gid_base!(gid: "foo" @ 0); 
 
-//     #[test]
-//     fn err_struct_duplicate() { 
-//         let res = parse_type("{ foo: bar, bar: baz, foo: baz }");
-//         assert_eq!(res.unwrap_err().kind, ParseErrorKind::SemanticDuplicate)
-//     }
+        let mut iter2 = gid.args.unwrap().into_iter(); 
+        let arg = iter2.next().unwrap(); 
+        assert_gid_base!(arg: "bar" @ 4); 
 
-//     #[test]
-//     fn err_nested_optionals() {
-//         assert_type("foo<T>?", Type { 
-//             kind: TypeKind::Identifier(GenericIdentifier {
-//                 base: "foo".to_string(), 
-//                 args: vec![ GenericIdentifier::simple("T") ],
-//         }),
-//             optional: true, 
-//             in_plus: None, 
-//             out_plus: None, 
-//         })
-//     }
+        let mut iter3 = arg.args.unwrap().into_iter(); 
 
-//     #[test]
-//     fn optional_duplicate() { 
-//         let res = parse_type("foo??");
-//         assert!(matches!(res.unwrap_err().kind, ParseErrorKind::Semantic(_)));
-//     }
-// }
+        let arg = iter3.next().unwrap(); 
+        assert_gid_base!(arg: "asdf" @ 8); 
+
+        let arg = iter3.next().unwrap(); 
+        assert_gid_base!(arg: "ree" @ 14);
+
+        assert_eq!(iter3.next(), None); 
+        assert_eq!(iter2.next(), None); 
+    }
+
+    #[test]
+    fn struct_array() { 
+        let (_, typ) = parse_type("{ foo: bar }[]").unwrap(); 
+        let TypeKind::Array(typ) = typ.kind else { panic!("Expected array") };
+        let TypeKind::Struct(typ) = typ.kind else { panic!("Expected struct") }; 
+
+        let mut iter = typ.into_iter(); 
+
+        let field = iter.next().unwrap(); 
+        assert_eq!(field.name.text, "foo");
+        assert_type_gid!(field.typ, "bar"); 
+
+        assert_eq!(iter.next(), None); 
+    }
+
+    #[test]
+    fn tuple_array() { 
+        let (_, typ) = parse_type("[foo][]").unwrap();
+
+        let TypeKind::Array(typ) = typ.kind else { panic!("Expected array") }; 
+        let TypeKind::Tuple(typ) = typ.kind else { panic!("Expected tuple") };
+        let mut iter = typ.into_iter();
+
+        let typ = iter.next().unwrap(); 
+        assert_type_gid!(typ, "foo"); 
+
+        assert_eq!(iter.next(), None); 
+    }
+
+    #[test]
+    fn complex_struct() { 
+        let (_, typ) = parse_type("{ foo: bar[], baz: generic<type> }").unwrap(); 
+
+        let TypeKind::Struct(fields) = typ.kind else { panic!("Expected struct") }; 
+        let mut iter = fields.into_iter(); 
+
+        let field = iter.next().unwrap(); 
+        assert_eq!(field.name.text, "foo"); 
+
+        let TypeKind::Array(field_type) = field.typ.kind else { panic!("Expected array field") };
+        assert_type_gid!(field_type, "bar"); 
+
+        let field = iter.next().unwrap(); 
+        assert_eq!(field.name.text, "baz"); 
+        let TypeKind::Identifier(field_typ) = field.typ.kind else { panic!() };
+        assert_gid_base!(field_typ: "generic" @ 19);
+
+        assert_eq!(iter.next(), None); 
+    }
+
+    #[test]
+    fn struct_mod_out() { 
+        let (_, typ) = parse_type("{ foo: bar } out + {asdf: ree}").unwrap();
+        assert_eq!(typ.in_plus, None); 
+
+        let Some(s) = typ.out_plus else { panic!() }; 
+        let mut iter = s.into_iter(); 
+
+        assert_eq!(iter.next().unwrap().name.text, "asdf"); 
+        assert_eq!(iter.next(), None); 
+    }
+
+    #[test]
+    fn optional() { 
+        let (_, typ) = parse_type("foo<T>?").unwrap(); 
+        assert!(typ.optional); 
+
+        let TypeKind::Identifier(typ) = typ.kind else { panic!() };
+        assert_eq!(typ.base.text, "foo"); 
+    }
+
+
+    #[test]
+    fn err_optional_duplicate() { 
+        let res = parse_type("foo??");
+        assert!(matches!(res.unwrap_err().kind, ParseErrorKind::Semantic(_)));
+    }
+}
