@@ -1,7 +1,6 @@
 use crate::parse::lexer::Span;
 use crate::parse::tokens::{Keyword, Identifier};
 use crate::parse::{lexer::TokenStream, ParseResult, tokens::Punctuation};
-use crate::peek_match; 
 
 use super::Expectable;
 
@@ -27,11 +26,12 @@ pub struct UseTree {
 impl Expectable for UseTree { 
     fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
         let mut path = Vec::<String>::new(); 
-        let first = stream.next()?;
+        let first = stream.peek()?;
 
         loop { 
+            let next = stream.next()?;
 
-            if let Some(ident) = first.as_identifier() { 
+            if let Some(ident) = next.as_identifier() { 
                 path.push(ident.text); 
 
                 if stream.peek_for_punctuation(Punctuation::PathSeparator)? { 
@@ -40,14 +40,14 @@ impl Expectable for UseTree {
                 else if stream.peek_for_keyword(Keyword::As)? { 
                     let alias = stream.next()?.try_as_identifier()?; 
                     return Ok(Self { 
-                        span: first.span.through(alias.span),
+                        span: next.span.through(alias.span),
                         path, 
                         kind: UseTreeKind::Alias(alias) 
                     })
                 }
                 else { 
                     return Ok(Self { 
-                        span: first.span.through(ident.span), 
+                        span: next.span.through(ident.span), 
                         path, 
                         kind: UseTreeKind::Simple 
                     })
@@ -55,7 +55,6 @@ impl Expectable for UseTree {
             } 
             else { 
 
-                let next = stream.next()?; 
                 match next.as_punctuation() { 
                     Some(Punctuation::Glob) => { 
                         return Ok(Self { 
@@ -72,15 +71,15 @@ impl Expectable for UseTree {
                             nested.push(Self::parse_expect(stream)?);
     
                             let next = stream.next()?; 
-                            peek_match!(stream.peek_for_punctuation { 
-                                Punctuation::Comma => continue, 
-                                Punctuation::BraceClose => return Ok(Self { 
+                            match next.as_punctuation() { 
+                                Some(Punctuation::Comma) => continue, 
+                                Some(Punctuation::BraceClose) => return Ok(Self { 
                                     span: first.span.through(next.span), 
                                     path, 
                                     kind: UseTreeKind::Nested(nested) 
                                 }), 
                                 _ => return Err(next.as_err_unexpected())
-                            })
+                            }
                         }
 
                     },
@@ -94,77 +93,77 @@ impl Expectable for UseTree {
 }
 
 
-// #[cfg(test)]
-// mod test {
-//     use crate::parse::ast::Expectable;
-//     use crate::parse::tokens::{Keyword};
-//     use crate::parse::{ParseResult};
-//     use crate::parse::ast::use_tree::UseTreeKind;
-//     use crate::parse::{ lexer::TokenStream} ;
-//     use crate::parse::lexer_tests::{ token_stream, assert_eof, assert_keyword };
+#[cfg(test)]
+mod test {
+    use crate::parse::ast::Expectable;
+    use crate::parse::tokens::{Keyword};
+    use crate::parse::{ParseResult};
+    use crate::parse::ast::use_tree::UseTreeKind;
+    use crate::parse::{ lexer::TokenStream} ;
+    use crate::parse::lexer_tests::{ token_stream, assert_eof, assert_keyword };
 
-//     use super::UseTree;
+    use super::UseTree;
 
-//     fn parse_use(str: &str) -> ParseResult<(TokenStream, UseTree)> { 
-//         let mut stream = token_stream(str); 
-//         assert_keyword(&mut stream, Keyword::Use);
-//         UseTree::parse_expect(&mut stream).map(|tree| (stream, tree))
-//     }
+    fn parse_use(str: &str) -> ParseResult<(TokenStream, UseTree)> { 
+        let mut stream = token_stream(str); 
+        assert_keyword(&mut stream, Keyword::Use);
+        UseTree::parse_expect(&mut stream).map(|tree| (stream, tree))
+    }
 
-//     #[test]
-//     fn simple() { 
-//         let (mut stream, tree) = parse_use("use foo::bar use").unwrap();
-//         assert_eq!(tree.path, vec![ "foo", "bar"]);
-//         assert_eq!(tree.kind, UseTreeKind::Simple);
+    #[test]
+    fn simple() { 
+        let (mut stream, tree) = parse_use("use foo::bar use").unwrap();
+        assert_eq!(tree.path, vec![ "foo", "bar"]);
+        assert_eq!(tree.kind, UseTreeKind::Simple);
 
-//         // `use` is a valid top-level keyword, so it should end the parsing gracefully
-//         assert_keyword(&mut stream, Keyword::Use);
-//         assert_eof(&mut stream);
-//     }
+        // `use` is a valid top-level keyword, so it should end the parsing gracefully
+        assert_keyword(&mut stream, Keyword::Use);
+        assert_eof(&mut stream);
+    }
 
-//     #[test]
-//     fn glob() { 
-//         let (mut stream, tree) = parse_use("use foo::bar::baz::* use").unwrap();
-//         assert_eq!(tree.path, vec!["foo", "bar", "baz"]);
-//         assert_eq!(tree.kind, UseTreeKind::Glob); 
+    #[test]
+    fn glob() { 
+        let (mut stream, tree) = parse_use("use foo::bar::baz::* use").unwrap();
+        assert_eq!(tree.path, vec!["foo", "bar", "baz"]);
+        assert_eq!(tree.kind, UseTreeKind::Glob); 
 
-//         assert_keyword(&mut stream, Keyword::Use);
-//         assert_eof(&mut stream); 
-//     }
+        assert_keyword(&mut stream, Keyword::Use);
+        assert_eof(&mut stream); 
+    }
 
-//     #[test]
-//     fn alias() { 
-//         let (_, tree) = parse_use("use foo::bar as baz").unwrap();
-//         assert_eq!(tree.path, vec![ "foo", "bar" ]);
-//         assert!(matches!(tree.kind, UseTreeKind::Alias(s) if s == "baz"));
-//     }
+    #[test]
+    fn alias() { 
+        let (_, tree) = parse_use("use foo::bar as baz").unwrap();
+        assert_eq!(tree.path, vec![ "foo", "bar" ]);
+        assert!(matches!(tree.kind, UseTreeKind::Alias(s) if s.text == "baz"));
+    }
 
-//     #[test]
-//     fn nested() { 
-//         let (_, tree) = parse_use("use foo::{ bar::baz::boo, glob::*, asdf::{ jkl, qwerty } }").unwrap(); 
+    #[test]
+    fn nested() { 
+        let (_, tree) = parse_use("use foo::{ bar::baz::boo, glob::*, asdf::{ jkl, qwerty } }").unwrap(); 
 
-//         assert_eq!(tree.path, vec![ "foo" ]);
-//         if let UseTreeKind::Nested(outer) = tree.kind { 
-//             assert_eq!(outer.len(), 3);
+        assert_eq!(tree.path, vec![ "foo" ]);
+        if let UseTreeKind::Nested(outer) = tree.kind { 
+            assert_eq!(outer.len(), 3);
 
-//             assert_eq!(outer[0].kind, UseTreeKind::Simple);
-//             assert_eq!(outer[0].path, vec![ "bar", "baz", "boo" ]);
+            assert_eq!(outer[0].kind, UseTreeKind::Simple);
+            assert_eq!(outer[0].path, vec![ "bar", "baz", "boo" ]);
 
-//             assert_eq!(outer[1].kind, UseTreeKind::Glob); 
-//             assert_eq!(outer[1].path, vec![ "glob" ]);
+            assert_eq!(outer[1].kind, UseTreeKind::Glob); 
+            assert_eq!(outer[1].path, vec![ "glob" ]);
 
-//             assert_eq!(outer[2].path, vec!["asdf"]);
-//             if let UseTreeKind::Nested(inner) = &outer[2].kind { 
-//                 assert_eq!(inner.len(), 2); 
+            assert_eq!(outer[2].path, vec!["asdf"]);
+            if let UseTreeKind::Nested(inner) = &outer[2].kind { 
+                assert_eq!(inner.len(), 2); 
 
-//                 assert_eq!(inner[0].kind, UseTreeKind::Simple);
-//                 assert_eq!(inner[0].path, vec![ "jkl"]);
+                assert_eq!(inner[0].kind, UseTreeKind::Simple);
+                assert_eq!(inner[0].path, vec![ "jkl"]);
 
-//                 assert_eq!(inner[1].kind, UseTreeKind::Simple);
-//                 assert_eq!(inner[1].path, vec![ "qwerty" ]);
-//             }
-//             else { panic!("Expected inner to be nested") }
-//         }
-//         else { panic!("Expected outer to be nested")}
-//     }
-// }
+                assert_eq!(inner[1].kind, UseTreeKind::Simple);
+                assert_eq!(inner[1].path, vec![ "qwerty" ]);
+            }
+            else { panic!("Expected inner to be nested") }
+        }
+        else { panic!("Expected outer to be nested")}
+    }
+}
