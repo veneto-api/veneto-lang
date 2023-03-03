@@ -66,6 +66,9 @@ pub struct Type {
     /// The fields added with the `out +` modifier 
     /// Only semantically valid for structs.
     pub out_plus: Option<StructBody>, 
+
+    //TODO: Implement span here, 
+    // then remove `todo!()` for error spans and stuff in `rc.rs` 
 }
 
 impl Type { 
@@ -184,7 +187,7 @@ impl Finishable for StructBody {
     const INITIAL_TOKEN: Terminal = Terminal::Punctuation(Punctuation::BraceOpen);
 
     fn parse_finish(stream: &mut TokenStream, _initial: Token) -> ParseResult<Self> {
-        let mut fields = Self::new(); 
+        let mut fields = Vec::<StructField>::new(); 
         loop { 
             peek_match!(stream.peek_for_punctuation { 
                 Punctuation::Comma => continue, 

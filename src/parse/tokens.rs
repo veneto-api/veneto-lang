@@ -1,6 +1,7 @@
 use std::{str::FromStr, backtrace::Backtrace};
 use strum_macros::EnumString;
 
+use super::ast::rc::MethodName;
 use super::{ParseResult, ParseError, ParseErrorKind};
 use super::lexer::Span; 
 
@@ -144,22 +145,39 @@ impl Token {
     /// 
     /// This is preferred to checking the `TokenKind` as the rules may change
     pub fn is_identifier(&self) -> bool { 
-        matches!(self.kind, TokenKind::Word(_))
+        self.try_as_identifier().is_ok() 
+    }
+
+    fn is_word_reserved(str: &str) -> bool { 
+        //TAG: RESERVED_IDENTIFIERS
+        MethodName::from_str(str).is_ok()
     }
 
     /// Returns the token's value if this token is a valid identifier, otherwise `None`
     pub fn as_identifier(&self) -> Option<Identifier> { 
         if let TokenKind::Word(str) = self.kind.clone() { 
-            Some(Identifier { text: str, span: self.span })
+
+            if Self::is_word_reserved(&str) { 
+                None 
+            } else { 
+                Some(Identifier { text: str, span: self.span })
+            }
+        
         } else { 
             None
         }
     }
 
-    /// Returns this token value if this token is a valid identifier, otherwise an `ExpectedIdentifier` error.
+    /// Returns this token value if this token is a valid identifier, otherwise an error
     pub fn try_as_identifier(&self) -> ParseResult<Identifier> { 
         if let TokenKind::Word(str) = self.kind.clone() { 
-            Ok(Identifier { text: str, span: self.span })
+
+            if Self::is_word_reserved(&str) { 
+                Err(self.as_err(ParseErrorKind::ReservedKeyword))
+            } else { 
+                Ok(Identifier { text: str, span: self.span })
+            }
+
         } else { 
             Err(ParseError { 
                 kind: ParseErrorKind::ExpectedIdentifier, 

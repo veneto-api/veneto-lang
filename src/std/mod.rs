@@ -13,188 +13,93 @@ lazy_static! {
     static ref STD : ParseResult<Document> = parse_std(); 
 }
 
-// #[cfg(test)]
-// mod test { 
+#[cfg(test)] 
+mod test {
+    use crate::parse::ast::{document::Node, rc::{RCComponent, MethodName, RCDeclaration, RCReference, Metaclass, RCType}, types::TypeKind, general::test::assert_gid};
+ 
+    #[test]
+    fn test_std() { 
+        let doc = super::parse_std().unwrap();
+        let mut nodes = doc.into_iter(); 
 
+        //
+        // Ref<T>
+        //
 
-//     use crate::parse::ast::general::GenericIdentifier;
-//     use crate::parse::ast::rc::{ResourceClass, RCDeclaration, Method, MethodName, MethodOutput, Link, RCReference, Metaclass, MethodInput, RCType};
-//     use crate::parse::ast::types::{Type, TypeKind}; 
+        let Some(Node::ResourceClass(rc)) = nodes.next() else { panic!() }; 
+        let RCDeclaration::Basic(gid) = rc.declaration else { panic!() }; 
+        assert_gid!(gid, "Ref" < "T" >); 
 
-//     #[test]
-//     fn test_std() { 
-//         let doc = super::STD.as_ref().unwrap(); 
-//         let mut rcs = doc.resource_classes.iter(); 
+        let mut components = rc.components.into_iter(); 
 
-//         // Ref<T>
-//         assert_eq!(rcs.next().unwrap(), &ResourceClass { 
-//             declaration: RCDeclaration::Basic(GenericIdentifier { 
-//                 base: "Ref".to_string(), 
-//                 args: vec![ 
-//                     GenericIdentifier { 
-//                         base: "T".to_string(), 
-//                         args: vec![], 
-//                     }
-//                  ]
-//             }),
-            
-//             data: None, 
-//             embed: Some(Type { 
-//                 kind: TypeKind::Identifier(GenericIdentifier::simple("T")),
-//                 optional: false, 
-//                 in_plus: None, 
-//                 out_plus: None, 
-//             }),
+        let Some(RCComponent::Embed(typ)) = components.next() else { panic!() }; 
+        let TypeKind::Identifier(gid) = typ.kind else { panic!() }; 
+        assert_gid!(gid, "T"); 
 
-//             interface: None, 
-//             links: vec![], 
+        let Some(RCComponent::Method(method)) = components.next() else { panic!() }; 
+        assert_eq!(method.name, MethodName::Get); 
+        assert!(method.input.is_none()); 
+        let mut iter = method.outputs.into_iter(); 
+        let output = iter.next().unwrap(); 
+        assert_eq!(output.status.unwrap(), "405"); 
+        assert!(output.typ.is_none()); 
+        assert!(iter.next().is_none()); 
 
-//             methods: vec![ 
-//                 Method { 
-//                     name: MethodName::Get, 
-//                     input: None, 
-//                     outputs: vec! [ 
-//                         MethodOutput { 
-//                             status: Some(405.to_string()),
-//                             typ: None, 
-//                         }
-//                     ]
-//                 },
-//                 Method { 
-//                     name: MethodName::Delete,
-//                     input: None,
-//                     outputs: vec![],
-//                 }
-//             ]
-//         });
+        let Some(RCComponent::Method(method)) = components.next() else { panic!() }; 
+        assert_eq!(method.name, MethodName::Delete); 
+        assert!(method.input.is_none()); 
+        assert!(method.outputs.is_empty()); 
 
-//         // List<T>
-//         assert_eq!(rcs.next().unwrap(), &ResourceClass { 
-//             declaration: RCDeclaration::Basic(GenericIdentifier { 
-//                 base: "List".to_string(), 
-//                 args: vec![ 
-//                     GenericIdentifier { 
-//                         base: "T".to_string(), 
-//                         args: vec![], 
-//                     }
-//                 ]
-//             }),
+        assert!(components.next().is_none()); 
 
-//             data: None, 
-//             embed: Some(Type { 
-//                 kind: TypeKind::Array(Box::new(Type { 
-//                     kind: TypeKind::Identifier(GenericIdentifier { 
-//                         base: "T".to_string(), 
-//                         args: vec![],
-//                     }),
-//                     optional: false,
-//                     in_plus: None,
-//                     out_plus: None, 
-//                 })),
-//                 optional: false,
-//                 in_plus: None, 
-//                 out_plus: None, 
-//             }), 
+        //
+        // List<T>
+        // 
 
-//             interface: None, 
-//             links: vec![ 
-//                 Link { 
-//                     rel: "next".to_string(), 
-//                     optional: true, 
-//                     typ: RCReference::Special(Metaclass::RCSelf),
-//                 }
-//             ],
+        let Some(Node::ResourceClass(rc)) = nodes.next() else { panic!() }; 
+        let RCDeclaration::Basic(gid) = rc.declaration else { panic!() }; 
+        assert_gid!(gid, "List" < "T" > ); 
 
-//             methods: vec![ 
-//                 Method { 
-//                     name: MethodName::Get, 
-//                     input: None, 
-//                     outputs: vec![], 
-//                 },
-//                 Method { 
-//                     name: MethodName::Post, 
-//                     input: Some(MethodInput { 
-//                         typ: RCType::Normal(Type { 
-//                             kind: TypeKind::Identifier(GenericIdentifier::simple("T")),
-//                             optional: false,
-//                             in_plus: None, 
-//                             out_plus: None, 
-//                         }),
-//                         lax: false, 
-//                     }),
-//                     outputs: vec![ 
-//                         MethodOutput { 
-//                             status: Some(201.to_string()), 
-//                             typ: Some(RCType::Normal(Type { 
-//                                 kind: TypeKind::Identifier(GenericIdentifier::simple("T")),
-//                                 optional: false,
-//                                 in_plus: None, 
-//                                 out_plus: None, 
-//                             }))
-//                         }
-//                     ]
-//                 }
-//             ]
-//         });
+        let mut components = rc.components.into_iter(); 
 
-//         // Media
-//         assert_eq!(rcs.next().unwrap(), &ResourceClass { 
-//             declaration: RCDeclaration::Basic(GenericIdentifier { 
-//                 base: "Media".to_string(), 
-//                 args: vec![], 
-//             }), 
-//             data: None, 
-//             embed: None, 
-//             interface: None, 
+        let Some(RCComponent::Embed(typ)) = components.next() else { panic!() }; 
+        let TypeKind::Array(typ) = typ.kind else { panic!() }; 
+        let TypeKind::Identifier(typ) = typ.kind else { panic!() }; 
+        assert_gid!(typ, "T"); 
 
-//             links: vec![], 
-//             methods: vec![ 
-//                 Method { 
-//                     name: MethodName::Get, 
-//                     input: None, 
-//                     outputs: vec![ 
-//                         MethodOutput { 
-//                             status: None, 
-//                             typ: Some(RCType::Special(Metaclass::Media))
-//                         }
-//                     ]
-//                 },
-//                 Method { 
-//                     name: MethodName::Put, 
-//                     input: Some(MethodInput { 
-//                         typ: RCType::Special(Metaclass::Media), 
-//                         lax: false, 
-//                     }), 
-//                     outputs: vec![], 
-//                 }
-//             ]
-//         });
+        let Some(RCComponent::Links(links)) = components.next() else { panic!() }; 
+        let mut links = links.into_iter(); 
+        let link = links.next().unwrap(); 
+        assert_eq!(link.rel.text, "next"); 
+        assert!(link.optional); 
+        let RCReference::Special(metaclass) = link.typ else { panic!() }; 
+        assert_eq!(metaclass.node, Metaclass::RCSelf); 
+        assert!(links.next().is_none()); 
 
-//         // Action
-//         assert_eq!(rcs.next().unwrap(), &ResourceClass { 
-//             declaration: RCDeclaration::Basic(GenericIdentifier { 
-//                 base: "Action".to_string(), 
-//                 args: vec![],
-//             }), 
-//             data: None, 
-//             embed: None, 
-//             interface: None, 
+        let Some(RCComponent::Method(method)) = components.next() else { panic!() }; 
+        assert_eq!(method.name, MethodName::Get); 
+        assert!(method.input.is_none()); 
+        assert!(method.outputs.is_empty()); 
 
-//             links: vec![], 
-//             methods: vec![
-//                 Method { 
-//                     name: MethodName::Post, 
-//                     input: None, 
-//                     outputs: vec! [ 
-//                         MethodOutput { 
-//                             status: Some(204.to_string()), 
-//                             typ: None, 
-//                         }
-//                     ]
-//                 }
-//             ]
-//         });
+        let Some(RCComponent::Method(method)) = components.next() else { panic!() }; 
+        assert_eq!(method.name, MethodName::Post); 
+        let Some(input) = method.input else { panic!() }; 
+        assert!(!input.lax); 
+        let RCType::Normal(typ) = input.typ else { panic!() }; 
+        let TypeKind::Identifier(typ) = typ.kind else { panic!() }; 
+        assert_gid!(typ, "T"); 
 
+        let mut outputs = method.outputs.into_iter(); 
+        let output = outputs.next().unwrap(); 
+        assert!(matches!(output.status, Some(x) if x == "201"));
+        let RCType::Normal(typ) = output.typ.unwrap() else { panic!() }; 
+        let TypeKind::Identifier(typ) = typ.kind else { panic!() }; 
+        assert_gid!(typ, "T"); 
 
-//     }
-// }
+        assert!(outputs.next().is_none()); 
+        assert!(components.next().is_none()); 
+
+        // Aight I give up lol this should be enough for now...
+
+    }
+}

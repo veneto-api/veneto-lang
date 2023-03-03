@@ -99,8 +99,8 @@ fn parse_list_into<T: Peekable>(vec: &mut Vec<T>, stream: &mut TokenStream) -> P
 
 #[derive(Debug)]
 pub struct Spanned<T> { 
-    node: T, 
-    span: Span, 
+    pub node: T, 
+    pub span: Span, 
 }
 
 impl<T> PartialEq for Spanned<T> where T: PartialEq { 

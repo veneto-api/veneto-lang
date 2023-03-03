@@ -31,6 +31,9 @@ pub enum ParseErrorKind {
     ExpectedNumber, 
     ExpectedStringLiteral,
 
+    /// The user is attempting to use a keyword as an identifier 
+    ReservedKeyword,
+
     ExpectedTypeExpression,
 
     /// The lexer attempted to process a punctuation word that does not correspond to a valid `Punctuation` 

@@ -35,7 +35,7 @@ resource List<T> {
     GET
 
     /// Creates a new item within the list. 
-    POST T -> #201 T
+    POST T -> #201: T
 }
 
 
