@@ -5,8 +5,9 @@ use std::{str::Chars, collections::VecDeque};
 
 use crate::parse::tokens::LONGEST_PUNCTUATION;
 
+use super::ast::Spanned;
 use super::{ ParseResult, ParseErrorKind, ParseError };
-use super::tokens::{ Token, TokenKind, Punctuation, Keyword, Terminal, Identifier };
+use super::tokens::{ Token, TokenKind, Punctuation, Keyword, Terminal };
 
 
 pub type Index = u32; 
@@ -584,7 +585,7 @@ impl<'a> TokenStream<'a> {
     /// Peek the next token from the stream.
     /// If it's a valid identifier, advance the cursor and return it.
     /// Otherwise, return `None`.  
-    pub fn peek_for_identifier(&mut self) -> ParseResult<Option<Identifier>> { 
+    pub fn peek_for_identifier(&mut self) -> ParseResult<Option<Spanned<String>>> { 
         match self.peek()?.as_identifier() { 
             Some(ident) => { 
                 self.next()?;

@@ -5,7 +5,7 @@ use strum_macros::{EnumString, Display};
 
 use crate::parse::{ ParseResult, ParseErrorKind, ParseError }; 
 use crate::parse::lexer::{TokenStream, Span}; 
-use crate::parse::tokens::{ Punctuation, Keyword, Number, Identifier, Terminal, TokenKind }; 
+use crate::parse::tokens::{ Punctuation, Keyword, Number, Terminal, TokenKind }; 
 use crate::parse::ast::general::GenericIdentifier;
 use crate::peek_match;
 
@@ -85,7 +85,7 @@ impl Peekable for ResourceClass {
                         return Err(err_ref.as_semantic_error("Resource classes cannot have modifiers if they are extended"))
                     }
                     else { 
-                        RCDeclaration::Extended(ident.base.text, GenericIdentifier::parse_expect(stream)?)
+                        RCDeclaration::Extended(ident.base.node, GenericIdentifier::parse_expect(stream)?)
                     }
     
                 }
@@ -243,7 +243,7 @@ pub type LinksBlock = Vec<Link>;
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct Link { 
-    pub rel: Identifier, 
+    pub rel: Spanned<String>, 
     pub optional: bool, 
     pub typ: RCReference,
     //TAG: DYNAMIC_LINKS
@@ -433,7 +433,7 @@ mod test {
         ($typ:expr, $val:literal) => {
             let RCType::Normal(typ) = $typ else { panic!("Expected normal RC type") }; 
             let TypeKind::Identifier(gid) = typ.kind else { panic!("Expected RC type to be an Identifier") }; 
-            assert_eq!(gid.base.text, $val); 
+            assert_eq!(gid.base.node, $val); 
         };
     }
 
@@ -566,7 +566,7 @@ mod test {
         let mut iter = links.into_iter(); 
 
         let next = iter.next().unwrap(); 
-        assert_eq!(next.rel.text, "foo"); 
+        assert_eq!(next.rel.node, "foo"); 
 
         let RCReference::Normal(typ) = next.typ else { panic!() }; 
         assert_gid!(typ, "bar"); 
@@ -580,7 +580,7 @@ mod test {
         let mut iter = links.into_iter(); 
 
         let next = iter.next().unwrap(); 
-        assert_eq!(next.rel.text, "foo"); 
+        assert_eq!(next.rel.node, "foo"); 
         assert!(next.optional); 
 
         let RCReference::Special(metaclass) = next.typ else { panic!() }; 
@@ -595,14 +595,14 @@ mod test {
         let mut iter = links.into_iter(); 
 
         let next = iter.next().unwrap(); 
-        assert_eq!(next.rel.text, "bar"); 
+        assert_eq!(next.rel.node, "bar"); 
         assert!(!next.optional); 
 
         let RCReference::Normal(typ) = next.typ else { panic!() }; 
         assert_gid!(typ, "foo" < "baz" >); 
 
         let next = iter.next().unwrap(); 
-        assert_eq!(next.rel.text, "other"); 
+        assert_eq!(next.rel.node, "other"); 
 
         let RCReference::Special(metaclass) = next.typ else { panic!() }; 
         assert_eq!(metaclass.node, Metaclass::Media);
@@ -652,7 +652,7 @@ mod test {
         let next = iter.next().unwrap(); 
         let RCComponent::Interface(expr) = next else { panic!() }; 
         let InterfaceExpression::Identifier(expr) = expr else { panic!() };
-        assert_eq!(expr.text, "Queryable"); 
+        assert_eq!(expr.node, "Queryable"); 
 
         let next = iter.next().unwrap(); 
         let RCComponent::Links(_) = next else { panic!() }; 
@@ -692,9 +692,9 @@ mod test {
         let field = iter.next().unwrap(); 
         assert_eq!(iter.next(), None); 
 
-        assert_eq!(field.name.text, "foo"); 
+        assert_eq!(field.name.node, "foo"); 
         let TypeKind::Identifier(gid) = field.typ.kind else { panic!() }; 
-        assert_eq!(gid.base.text, "bar"); 
+        assert_eq!(gid.base.node, "bar"); 
     }
 
 }

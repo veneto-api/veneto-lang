@@ -70,7 +70,7 @@ mod test {
         let Some(RCComponent::Links(links)) = components.next() else { panic!() }; 
         let mut links = links.into_iter(); 
         let link = links.next().unwrap(); 
-        assert_eq!(link.rel.text, "next"); 
+        assert_eq!(link.rel.node, "next"); 
         assert!(link.optional); 
         let RCReference::Special(metaclass) = link.typ else { panic!() }; 
         assert_eq!(metaclass.node, Metaclass::RCSelf); 

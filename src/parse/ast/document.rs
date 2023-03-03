@@ -1,6 +1,6 @@
-use crate::{parse::{lexer::{TokenStream}, ParseResult, tokens::{Keyword, Punctuation, TokenKind, Identifier}}};
+use crate::{parse::{lexer::{TokenStream}, ParseResult, tokens::{Keyword, Punctuation, TokenKind}}};
 
-use super::{types::Type, rc::ResourceClass, interfaces::InterfaceExpression, use_tree::UseTree, Expectable, Peekable, general::GenericIdentifier};
+use super::{types::Type, rc::ResourceClass, interfaces::InterfaceExpression, use_tree::UseTree, Expectable, Peekable, general::GenericIdentifier, Spanned};
 
 
 pub struct EntryPoint { 
@@ -10,8 +10,8 @@ pub struct EntryPoint {
 
 pub enum Node { 
     Use(UseTree),
-    Type(Identifier, Type), 
-    Interface(Identifier, InterfaceExpression), 
+    Type(Spanned<String>, Type), 
+    Interface(Spanned<String>, InterfaceExpression), 
     ResourceClass(ResourceClass), 
     EntryPoint(EntryPoint), 
 }

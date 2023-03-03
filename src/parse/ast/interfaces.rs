@@ -2,9 +2,9 @@ use std::{str::FromStr, backtrace::Backtrace};
 
 use strum_macros::{ Display, EnumString };
 
-use crate::parse::{lexer::{TokenStream, Span}, ParseResult, tokens::{Punctuation, Terminal, Token, Identifier}, ParseErrorKind, ParseError};
+use crate::parse::{lexer::{TokenStream, Span}, ParseResult, tokens::{Punctuation, Terminal, Token}, ParseErrorKind, ParseError};
 
-use super::{Peekable, Expectable}; 
+use super::{Peekable, Expectable, Spanned}; 
 
 #[derive(Display, Debug, EnumString, PartialEq, Eq)]
 #[strum(serialize_all="lowercase")]
@@ -36,7 +36,7 @@ pub struct InterfaceBody {
 /// Either an interface literal or an identifier referencing another interface
 #[derive(Debug, PartialEq, Eq)]
 pub enum InterfaceExpression { 
-    Identifier(Identifier), 
+    Identifier(Spanned<String>), 
     Literal(InterfaceBody), 
 }
 impl Expectable for InterfaceExpression { 
@@ -60,7 +60,7 @@ impl super::Finishable for InterfaceBody {
 
                 let typ = stream.next()?.try_as_identifier()?;
                 let typ_span = typ.span; 
-                let Ok(typ) = InterfaceValueType::from_str(&typ.text) else { 
+                let Ok(typ) = InterfaceValueType::from_str(&typ.node) else { 
                     return Err(ParseError{ 
                         kind: ParseErrorKind::UnknownInterfaceValueType, 
                         span: typ_span, 
@@ -69,7 +69,7 @@ impl super::Finishable for InterfaceBody {
                 };
 
                 fields.push(InterfaceField { 
-                    name: name.text, 
+                    name: name.node, 
                     typ, 
                     optional,
                     span: name.span.through(typ_span),

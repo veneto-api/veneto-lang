@@ -1,13 +1,13 @@
 use crate::parse::ParseResult;
 use crate::parse::lexer::{TokenStream};
-use crate::parse::tokens::{Punctuation, Terminal, Token, Identifier};
+use crate::parse::tokens::{Punctuation, Terminal, Token};
 
-use super::{Peekable, Expectable, Finishable};
+use super::{Peekable, Expectable, Finishable, Spanned};
 
 /// This is an identifier that can accept generic parameters.
 #[derive(PartialEq, Eq, Debug)]
 pub struct GenericIdentifier { 
-    pub base: Identifier, 
+    pub base: Spanned<String>, 
     pub args: Option<GenericArgs>,
 
     //TAG: RC_FLAGS
@@ -16,7 +16,7 @@ pub struct GenericIdentifier {
 pub type GenericArgs = Vec<GenericIdentifier>; 
 
 impl GenericIdentifier { 
-    fn parse_finish(stream: &mut TokenStream, base: Identifier) -> ParseResult<Self> { 
+    fn parse_finish(stream: &mut TokenStream, base: Spanned<String>) -> ParseResult<Self> { 
 
         let args = GenericArgs::parse_peek(stream)?; 
 
@@ -76,12 +76,12 @@ pub mod test {
 
     macro_rules! assert_gid {
         ($gid:ident, $base:literal) => { 
-            assert_eq!($gid.base.text, $base);
+            assert_eq!($gid.base.node, $base);
             assert_eq!($gid.args, None); 
         };
 
         ($gid:ident, $base:literal < $($params:tt),+ > ) => { 
-            assert_eq!($gid.base.text, $base);
+            assert_eq!($gid.base.node, $base);
             
             { 
                 let args = $gid.args.unwrap();
@@ -97,7 +97,7 @@ pub mod test {
 
     macro_rules! assert_gid_base {
         ($gid:ident: $base:literal @ $pos:literal) => {
-            assert_eq!($gid.base.text, $base);
+            assert_eq!($gid.base.node, $base);
             assert_eq!($gid.base.span, $crate::parse::Span { 
                 lo: $crate::parse::lexer::Position($pos), 
                 hi: $crate::parse::lexer::Position(($pos + $base.len()).try_into().unwrap()) 
@@ -130,15 +130,15 @@ pub mod test {
     #[test]
     fn complex() { 
         let (mut stream, gid) = parse_gid("foo<bar, baz<asdf, ree>, aaa>,").unwrap();
-        assert_eq!(gid.base.text, "foo");
+        assert_eq!(gid.base.node, "foo");
         
         let args = gid.args.unwrap();
         let mut iter = args.iter(); 
         
-        assert_eq!(iter.next().unwrap().base.text, "bar"); 
+        assert_eq!(iter.next().unwrap().base.node, "bar"); 
 
         let next = iter.next().unwrap(); 
-        assert_eq!(next.base.text, "baz"); 
+        assert_eq!(next.base.node, "baz"); 
 
         let inner_args = next.args.as_ref().unwrap();
         let mut inner_iter = inner_args.iter(); 

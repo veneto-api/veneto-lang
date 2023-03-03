@@ -1,6 +1,7 @@
 use std::{str::FromStr, backtrace::Backtrace};
 use strum_macros::EnumString;
 
+use super::ast::Spanned;
 use super::ast::rc::MethodName;
 use super::{ParseResult, ParseError, ParseErrorKind};
 use super::lexer::Span; 
@@ -28,12 +29,6 @@ pub enum TokenKind {
 #[derive(Clone, Debug)]
 pub struct Token { 
     pub kind: TokenKind, 
-    pub span: Span, 
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Identifier { 
-    pub text: String, 
     pub span: Span, 
 }
 
@@ -154,13 +149,13 @@ impl Token {
     }
 
     /// Returns the token's value if this token is a valid identifier, otherwise `None`
-    pub fn as_identifier(&self) -> Option<Identifier> { 
+    pub fn as_identifier(&self) -> Option<Spanned<String>> { 
         if let TokenKind::Word(str) = self.kind.clone() { 
 
             if Self::is_word_reserved(&str) { 
                 None 
             } else { 
-                Some(Identifier { text: str, span: self.span })
+                Some(Spanned { node: str, span: self.span })
             }
         
         } else { 
@@ -169,13 +164,13 @@ impl Token {
     }
 
     /// Returns this token value if this token is a valid identifier, otherwise an error
-    pub fn try_as_identifier(&self) -> ParseResult<Identifier> { 
+    pub fn try_as_identifier(&self) -> ParseResult<Spanned<String>> { 
         if let TokenKind::Word(str) = self.kind.clone() { 
 
             if Self::is_word_reserved(&str) { 
                 Err(self.as_err(ParseErrorKind::ReservedKeyword))
             } else { 
-                Ok(Identifier { text: str, span: self.span })
+                Ok(Spanned { node: str, span: self.span })
             }
 
         } else { 

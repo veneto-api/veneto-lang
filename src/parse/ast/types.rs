@@ -1,9 +1,9 @@
 use crate::parse::ParseErrorKind;
 use crate::parse::{lexer::TokenStream, ParseResult};
-use crate::parse::tokens::{Punctuation, Keyword, Terminal, TokenKind, Token, Identifier};
+use crate::parse::tokens::{Punctuation, Keyword, Terminal, TokenKind, Token};
 use crate::{peek_match};
 
-use super::{Expectable, Peekable, Finishable};
+use super::{Expectable, Peekable, Finishable, Spanned};
 use super::general::GenericIdentifier;
 
 use strum_macros::Display;
@@ -178,7 +178,7 @@ pub type StructBody = Vec<StructField>;
 /// This is an individual field declaration within a `Struct`
 #[derive(PartialEq, Debug)]
 pub struct StructField { 
-    pub name: Identifier, 
+    pub name: Spanned<String>, 
     /// This is the field's type, 
     /// abbreviated to `typ` because `type` is a reserved keyword
     pub typ: Type, 
@@ -303,7 +303,7 @@ pub mod test {
         let mut iter = s.into_iter(); 
 
         let field = iter.next().unwrap(); 
-        assert_eq!(field.name.text, "foo"); 
+        assert_eq!(field.name.node, "foo"); 
         assert_type_gid!(field.typ, "bar"); 
     }
 
@@ -367,7 +367,7 @@ pub mod test {
         let mut iter = typ.into_iter(); 
 
         let field = iter.next().unwrap(); 
-        assert_eq!(field.name.text, "foo");
+        assert_eq!(field.name.node, "foo");
         assert_type_gid!(field.typ, "bar"); 
 
         assert_eq!(iter.next(), None); 
@@ -395,13 +395,13 @@ pub mod test {
         let mut iter = fields.into_iter(); 
 
         let field = iter.next().unwrap(); 
-        assert_eq!(field.name.text, "foo"); 
+        assert_eq!(field.name.node, "foo"); 
 
         let TypeKind::Array(field_type) = field.typ.kind else { panic!("Expected array field") };
         assert_type_gid!(field_type, "bar"); 
 
         let field = iter.next().unwrap(); 
-        assert_eq!(field.name.text, "baz"); 
+        assert_eq!(field.name.node, "baz"); 
         let TypeKind::Identifier(field_typ) = field.typ.kind else { panic!() };
         assert_gid_base!(field_typ: "generic" @ 19);
 
@@ -416,7 +416,7 @@ pub mod test {
         let Some(s) = typ.out_plus else { panic!() }; 
         let mut iter = s.into_iter(); 
 
-        assert_eq!(iter.next().unwrap().name.text, "asdf"); 
+        assert_eq!(iter.next().unwrap().name.node, "asdf"); 
         assert_eq!(iter.next(), None); 
     }
 
@@ -426,7 +426,7 @@ pub mod test {
         assert!(typ.optional); 
 
         let TypeKind::Identifier(typ) = typ.kind else { panic!() };
-        assert_eq!(typ.base.text, "foo"); 
+        assert_eq!(typ.base.node, "foo"); 
     }
 
 

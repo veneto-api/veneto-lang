@@ -1,15 +1,15 @@
 use crate::parse::lexer::Span;
-use crate::parse::tokens::{Keyword, Identifier};
+use crate::parse::tokens::Keyword;
 use crate::parse::{lexer::TokenStream, ParseResult, tokens::Punctuation};
 
-use super::Expectable;
+use super::{Expectable, Spanned};
 
 #[derive(PartialEq, Debug)]
 pub enum UseTreeKind { 
     /// A single use, e.g. `use foo::bar`
     Simple,
     /// A use with an alias, e.g. `use foo::bar as baz`
-    Alias(Identifier), 
+    Alias(Spanned<String>), 
     /// A nested `use`; e.g. `use foo::{ bar, baz::ree }`
     Nested(Vec<UseTree>),
     /// A wildcard; e.g. `use foo::*`
@@ -32,7 +32,7 @@ impl Expectable for UseTree {
             let next = stream.next()?;
 
             if let Some(ident) = next.as_identifier() { 
-                path.push(ident.text); 
+                path.push(ident.node); 
 
                 if stream.peek_for_punctuation(Punctuation::PathSeparator)? { 
                     continue
@@ -135,7 +135,7 @@ mod test {
     fn alias() { 
         let (_, tree) = parse_use("use foo::bar as baz").unwrap();
         assert_eq!(tree.path, vec![ "foo", "bar" ]);
-        assert!(matches!(tree.kind, UseTreeKind::Alias(s) if s.text == "baz"));
+        assert!(matches!(tree.kind, UseTreeKind::Alias(s) if s.node == "baz"));
     }
 
     #[test]
