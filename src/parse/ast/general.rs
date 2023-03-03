@@ -83,13 +83,15 @@ pub mod test {
         ($gid:ident, $base:literal < $($params:tt),+ > ) => { 
             assert_eq!($gid.base.text, $base);
             
-            let args = $gid.args.unwrap();
-            let mut iter = args.iter(); 
-            $(
-                let next = iter.next().unwrap();
-                assert_gid!(next, $params);
-            )+
-            assert_eq!(iter.next(), None); 
+            { 
+                let args = $gid.args.unwrap();
+                let mut iter = args.iter(); 
+                $(
+                    let next = iter.next().unwrap();
+                    assert_gid!(next, $params);
+                )+
+                assert_eq!(iter.next(), None); 
+            }
         };
     }
 

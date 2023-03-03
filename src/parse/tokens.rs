@@ -292,9 +292,6 @@ pub enum Punctuation {
     #[strum(serialize="->")]
     Arrow, 
 
-    #[strum(serialize=";")]
-    Semicolon, 
-
 
     // ⚠️ before adding a variant, check the docs 
 }

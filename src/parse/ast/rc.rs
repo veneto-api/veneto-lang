@@ -1,11 +1,13 @@
+use std::backtrace::Backtrace;
 use std::str::FromStr;
 
 use strum_macros::{EnumString, Display};
 
-use crate::parse::{ ParseResult, ParseErrorKind }; 
+use crate::parse::{ ParseResult, ParseErrorKind, ParseError }; 
 use crate::parse::lexer::TokenStream; 
-use crate::parse::tokens::{ Punctuation, Keyword, Number, Identifier }; 
+use crate::parse::tokens::{ Punctuation, Keyword, Number, Identifier, Terminal }; 
 use crate::parse::ast::general::GenericIdentifier;
+use crate::peek_match;
 
 use super::parse_list_into;
 use super::{Expectable, types::Type, interfaces::InterfaceExpression, Peekable};
@@ -28,29 +30,34 @@ pub enum RCDeclaration {
     Extended(String, GenericIdentifier), 
 }
 
+#[derive(Debug)]
+pub enum RCComponent { 
+
+    /// The base data type declared with the `data` keyword
+    /// 
+    /// (This cannot be a reference to another RC at this time)
+    Data(Type),
+
+    Embed(Type), 
+
+    /// The interface expresssion (reference or literal) declared for this RC
+    Interface(InterfaceExpression), 
+
+    Links(LinksBlock), 
+
+    Method(Method),
+}
+
 
 /// The body of a resource class,
 /// beginning with an open brace
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct ResourceClass { 
     /// The declaration for this resource class,
     /// including its parameter information
     pub declaration: RCDeclaration, 
 
-    /// The base data type declared with the `data` keyword
-    /// 
-    /// (This cannot be a reference to another RC at this time)
-    pub data : Option<Type>, 
-
-    /// THe embedded data type, declared with the `embed` keyword
-    pub embed : Option<Type>, 
-
-    /// The interface expresssion (reference or literal) declared for this RC
-    pub interface : Option<InterfaceExpression>,
-
-    pub links : LinksBlock,
-
-    pub methods : Methods,
+    pub components: Vec<RCComponent>, 
 }
 impl ResourceClass { 
     pub fn default_status(data_is_some: bool, verb: MethodName) -> Number { 
@@ -85,82 +92,30 @@ impl Peekable for ResourceClass {
                 else { RCDeclaration::Basic(ident) }
             };
 
-            let mut data : Option<Type> = None; 
-            let mut embed : Option<Type> = None; 
-            let mut interface : Option<InterfaceExpression> = None;
-            let mut links : Option<LinksBlock> = None; 
-            let mut methods = Methods::new(); 
+            let mut components = Vec::<RCComponent>::new(); 
 
             stream.next()?.expect_punctuation(Punctuation::BraceOpen)?; 
             loop { 
 
-                let err_ref = stream.peek()?; 
-                if stream.peek_for_keyword(Keyword::Data)? { 
-                    if data.is_some() { 
-                        return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
-                    }
-                    data = Some(Type::parse_expect(stream)?);
-                }
-                else if stream.peek_for_keyword(Keyword::Embed)? { 
-                    if embed.is_some() { 
-                        return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
-                    }
-
-                    let typ = Type::parse_expect(stream)?; 
-
-                    if !typ.validate_ident_composite() { 
-                        return Err(err_ref.as_semantic_error("Embedded resources can only contain references to other resources"))
-                    }
-                    embed = Some(typ);
-                }
-                else if stream.peek_for_keyword(Keyword::Interface)? { 
-                    if interface.is_some() { 
-                        return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
-                    }
-                    interface = Some(InterfaceExpression::parse_expect(stream)?);
-                }
-                else if stream.peek_for_keyword(Keyword::Links)? { 
-                    if links.is_some() { 
-                        return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
-                    }
-                    links = Some(LinksBlock::parse_expect(stream)?);
-                }
-                else if stream.peek_for_punctuation(Punctuation::BraceClose)? { 
-                    break
-                }
-                else { 
-                    let method = Method::parse_expect(stream)?; 
-
-                    // Bonus check for implied duplicate method names
-                    // This is an edge case - explicit duplicate names are caught in `Method::parse_expect`, 
-                    // but implied names can't be caught there since the default is determined by the `data` field for GET requests
-                    //
-                    // https://veneto.notion.site/Incorrect-position-for-duplicate-implied-method-verb-502f7ba853b442bd80179f6db7af3776
-                    //TAG: DUPLICATE_IMPLIED_VERB
-                    let default_status = Self::default_status(data.is_some(), method.name);
+                peek_match!(stream.peek_for_terminal { 
                     
-                    if
-                        method.outputs.iter().any(|m| m.status.is_none()) &&
-                        method.outputs.iter().any(|m| m.status == Some(default_status.clone()))
-                    { 
-                        return Err(err_ref.as_err(ParseErrorKind::Semantic(
-                            format!("Duplicate output for default status {default_status} (one of them is implied)")
-                        )))
+                    Terminal::Keyword(Keyword::Data) => components.push(RCComponent::Data(Type::parse_expect(stream)?)),
+                    Terminal::Keyword(Keyword::Embed) => components.push(RCComponent::Embed(Type::parse_expect(stream)?)), 
+                    Terminal::Keyword(Keyword::Interface) => components.push(RCComponent::Interface(InterfaceExpression::parse_expect(stream)?)),
+                    Terminal::Keyword(Keyword::Links) => components.push(RCComponent::Links(LinksBlock::parse_expect(stream)?)),
+                    Terminal::Punctuation(Punctuation::BraceClose) => break, 
+                    _ => { 
+
+                        if let Some(method) = Method::parse_peek(stream)? { 
+                            components.push(RCComponent::Method(method))
+                        } else { 
+                            return Err(stream.next()?.as_err_unexpected()) 
+                        } 
                     }
-
-                    if methods.iter().any(|other| other.name == method.name) { 
-                        return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
-                    }
-
-                    methods.push(method); 
-                }
-
+                })
             }
 
-            Ok(Some(ResourceClass { 
-                declaration, data, embed, interface, methods,
-                links: links.unwrap_or_default(),
-            }))
+            Ok(Some(ResourceClass { declaration, components }))
         }
         else { Ok(None) }
     }
@@ -315,16 +270,20 @@ pub enum MethodName {
     Put, 
     Delete,
 }
-impl Expectable for MethodName { 
-    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
-        let token = stream.next()?; 
-        let name = token.as_identifier()
-            .ok_or(token.as_err_unexpected())?;
-            // Here we're looking for a method name,
-            // if we don't find an identifier this would return an "expected identifier" error 
-            // which doesn't exactly make sense to the user.  This got me during testing.  
-        
-        Self::from_str(&name.text).map_err(|_| token.as_err(ParseErrorKind::UnknownMethodName))
+impl Peekable for MethodName { 
+    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
+        if let Some(ident) = stream.peek_for_identifier()? { 
+            match Self::from_str(&ident.text) { 
+                Ok(x) => Ok(Some(x)),
+                Err(_) => Err(ParseError { 
+                    kind: ParseErrorKind::UnknownMethodName, 
+                    span: ident.span, 
+                    backtrace: Backtrace::capture(), 
+                })
+            }
+        } else { 
+            Ok(None)
+        }
     }
 }
 
@@ -356,8 +315,6 @@ pub struct Method {
     pub outputs : MethodOutputs, 
 }
 
-type Methods = Vec<Method>;
-
 #[derive(Debug, PartialEq)]
 pub struct MethodInput { 
     pub typ: RCType, 
@@ -373,9 +330,9 @@ pub struct MethodOutput {
 type MethodOutputs = Vec<MethodOutput>;
 
 
-impl Expectable for Method { 
-    fn parse_expect(stream: &mut TokenStream) -> ParseResult<Self> {
-        let name = MethodName::parse_expect(stream)?;
+impl Peekable for Method { 
+    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
+        let Some(name) = MethodName::parse_peek(stream)? else { return Ok(None) };
 
         let mut input : Option<MethodInput> = None; 
         if let Some(typ) = RCType::parse_peek(stream)? { 
@@ -392,463 +349,315 @@ impl Expectable for Method {
         let mut outputs = Vec::<MethodOutput>::new(); 
         if stream.peek_for_punctuation(Punctuation::Arrow)? { 
             loop { 
-                let mut status : Option<Number> = None; 
                 let err_ref = stream.peek()?; 
+
+                let mut status : Option<Number> = None; 
+                let mut typ : Option<RCType> = None; 
+
                 if stream.peek_for_punctuation(Punctuation::HttpStatus)? { 
                     status = Some(stream.next()?.try_as_number()?);
+
+                    if stream.peek_for_punctuation(Punctuation::Colon)? { 
+                        typ = Some(RCType::parse_expect(stream)?);
+                    }
+                }
+                else { 
+                    typ = RCType::parse_peek(stream)?; 
                 }
 
                 if outputs.iter().any(|other| other.status == status) { 
                     return Err(err_ref.as_err(ParseErrorKind::SemanticDuplicate))
                 }
 
-                let typ = RCType::parse_peek(stream)?; 
+                if status.is_none() && typ.is_none() { 
+                    return Err(stream.next()?.as_semantic_error("Expected a response status and/or type"))
+                }
+
                 outputs.push(MethodOutput { status, typ });
 
-                let next = stream.next()?; 
-                match next.as_punctuation() { 
-                    Some(Punctuation::Comma) => continue,
-                    Some(Punctuation::Semicolon) => break,
-                    _ => return Err(next.as_err_unexpected())
-                }
+                if stream.peek_for_punctuation(Punctuation::Comma)? { continue } 
+                else { break } 
             }
         }
-        else { 
-            stream.next()?.expect_punctuation(Punctuation::Semicolon)?;
-        }
 
-        Ok(Method { name, input, outputs })
+        Ok(Some(Method { name, input, outputs }))
         
     }
 }
 
 
 
-// #[cfg(test)]
-// mod test {
-//     use std::vec;
+#[cfg(test)]
+mod test {
 
-//     use crate::parse::ast::interfaces::{InterfaceExpression, InterfaceField, InterfaceValueType};
-//     use crate::parse::ast::types::{ TypeKind, StructField };
-//     use crate::parse::ast::types::test::make_simple_type;
-//     use crate::parse::ast::{ general::GenericIdentifier };
-//     use crate::parse::lexer_tests::token_stream;
-//     use crate::parse::{ParseResult, ParseErrorKind};
-//     use crate::parse::ast::{Expectable, Peekable};
+    use crate::parse::ast::general::test::{assert_gid};
+    use crate::parse::ast::interfaces::{InterfaceExpression};
+    use crate::parse::ast::rc::RCComponent;
+    use crate::parse::ast::types::{ TypeKind };
+    use crate::parse::lexer_tests::token_stream;
+    use crate::parse::{ParseResult, ParseErrorKind};
+    use crate::parse::ast::{Expectable, Peekable};
 
-//     use super::{Method, RCType, MethodInput, MethodName, Metaclass, LinksBlock, Link, ResourceClass, RCDeclaration, MethodOutput, RCReference};
+    use super::{Method, RCType, MethodName, Metaclass, LinksBlock, ResourceClass, RCDeclaration, RCReference };
 
-//     fn parse_method(input: &str) -> ParseResult<Method> { 
-//         let mut stream = token_stream(input); 
-//         Method::parse_expect(&mut stream)
-//     }
-//     fn assert_method(input: &str, expected: Method) { 
-//         assert_eq!( parse_method(input).unwrap(), expected );
-//     }
+    macro_rules! assert_rc_type {
+        ($typ:expr, $val:literal) => {
+            let RCType::Normal(typ) = $typ else { panic!("Expected normal RC type") }; 
+            let TypeKind::Identifier(gid) = typ.kind else { panic!("Expected RC type to be an Identifier") }; 
+            assert_eq!(gid.base.text, $val); 
+        };
+    }
 
+    //
+    // Methods
+    //
 
-//     fn make_simple_rc_type(kind: TypeKind) -> RCType { 
-//         RCType::Normal(make_simple_type(kind))
-//     }
-//     fn make_ident_type(name: &'static str) -> RCType { 
-//         RCType::Normal(make_simple_type(TypeKind::Identifier(GenericIdentifier::simple(name))))
-//     }
+    fn parse_method(input: &str) -> ParseResult<Method> { 
+        let mut stream = token_stream(input); 
+        Method::parse_peek(&mut stream).map(|opt| opt.expect("Expected a method here"))
+    }  
 
-//     //
-//     // Methods
-//     //
+    #[test]
+    fn method_empty() { 
+        let method = parse_method("DELETE").unwrap(); 
+        assert_eq!(method.name, MethodName::Delete); 
+        assert_eq!(method.input, None);
+        assert!(method.outputs.is_empty()); 
+    }
 
-//     #[test]
-//     fn method_empty() { 
-//         assert_method("DELETE;", Method { 
-//             name: MethodName::Delete, 
-//             input: None, 
-//             outputs: vec![], 
-//         })
-//     }
+    #[test]
+    fn method_complete() { 
+        let method = parse_method("POST foo -> #200: bar").unwrap(); 
+        assert_eq!(method.name, MethodName::Post); 
+        let Some(input) = method.input else { panic!() }; 
+        assert!(!input.lax); 
+        assert_rc_type!(input.typ, "foo"); 
 
-//     #[test]
-//     fn method_complete() { 
-//         assert_method("POST foo -> #200 bar;", Method { 
-//             name: super::MethodName::Post, 
-//             input: Some(MethodInput { 
-//                 typ: make_ident_type("foo"), 
-//                 lax: false, 
-//             }), 
-//             outputs: vec![ 
-//                 MethodOutput { status: Some("200".to_string()), typ:  Some(make_ident_type("bar")) }
-//             ]
-//         })
-//     }
+        let mut iter = method.outputs.into_iter(); 
+        let next = iter.next().unwrap(); 
+        assert_eq!(next.status.unwrap(), "200"); 
+        assert_rc_type!(next.typ.unwrap(), "bar"); 
 
-//     #[test]
-//     fn method_empty_bodies() { 
-//         assert_method("POST -> @empty;", Method { 
-//             name: MethodName::Post,
-//             input: None, 
-//             outputs: vec![ 
-//                 MethodOutput { status: None, typ: Some(RCType::Special(Metaclass::Empty)) }
-//             ]
-//         })
-//     }
+        assert_eq!(iter.next(), None); 
+    }
 
-//     #[test]
-//     fn method_implied_response() { 
-//         assert_method("PATCH foo -> bar;", Method { 
-//             name: MethodName::Patch, 
-//             input: Some(MethodInput { 
-//                 typ: make_ident_type("foo"), 
-//                 lax: false, 
-//             }), 
-//             outputs: vec![ 
-//                 MethodOutput { status: None, typ: Some(make_ident_type("bar")) }
-//             ]
-//         });
+    #[test]
+    fn method_empty_bodies() { 
+        let method = parse_method("POST -> @empty").unwrap();
+        assert_eq!(method.input, None); 
 
-//         assert_method("POST foo -> #204;", Method { 
-//             name: MethodName::Post, 
-//             input: Some(MethodInput { 
-//                 typ: make_ident_type("foo"), 
-//                 lax: false, 
-//             }), 
-//             outputs: vec![ 
-//                 MethodOutput { status: Some("204".to_string()), typ: None }
-//             ]
-//         });
-//     }
+        let mut iter = method.outputs.into_iter();
+        let next = iter.next().unwrap(); 
+        assert_eq!(next.status, None); 
+        assert_eq!(next.typ.unwrap(), RCType::Special(Metaclass::Empty));
 
-//     #[test]
-//     fn method_multiple_response() { 
-//         assert_method("POST -> bar, #204, #422 foo;", Method { 
-//             name: MethodName::Post, 
-//             input: None, 
-//             outputs: vec![ 
-//                 MethodOutput { status: None, typ: Some(make_ident_type("bar")) },
-//                 MethodOutput { status: Some("204".to_string()), typ: None },
-//                 MethodOutput { status: Some("422".to_string()), typ: Some(make_ident_type("foo")) },
-//             ]
-//         })
-//     }
+        assert_eq!(iter.next(), None); 
+    }
 
-//     #[test]
-//     fn err_empty_response() { 
-//         let err = parse_method("POST foo ->");
-//         assert!(err.is_err());
-//     }
+    #[test]
+    fn method_multiple_response() { 
+        let method = parse_method("POST -> bar, #204, #422: foo").unwrap(); 
+        let mut iter = method.outputs.into_iter(); 
 
-//     #[test]
-//     fn err_get_body() { 
-//         let err = parse_method("GET foo -> #200;").unwrap_err();
-//         assert!(matches!(err.kind, ParseErrorKind::Semantic(_)));
-//     }
+        let next = iter.next().unwrap(); 
+        assert_eq!(next.status, None); 
+        assert_rc_type!(next.typ.unwrap(), "bar"); 
 
-//     #[test]
-//     fn err_duplicate_responses() { 
-//         let err = parse_method("POST -> #201, #400 err, #201 foo;").unwrap_err();
-//         assert_eq!(err.kind, ParseErrorKind::SemanticDuplicate);
-//     }
+        let next = iter.next().unwrap(); 
+        assert_eq!(next.status, Some("204".to_string())); 
+        assert_eq!(next.typ, None); 
 
-//     #[test]
-//     fn method_type_literal() { 
-//         assert_method("POST { foo: bar } -> baz[];", Method { 
-//             name: MethodName::Post, 
-//             input: Some(MethodInput { 
-//                 typ: RCType::Normal(make_simple_type(TypeKind::Struct(vec![ 
-//                     StructField { 
-//                         name: "foo".to_string(), 
-//                         typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("bar"))),
-//                     }
-//                 ]))), 
-//                 lax: false 
-//             }), 
-//             outputs: vec![ 
-//                 MethodOutput { 
-//                     status: None, 
-//                     typ: Some(make_simple_rc_type(TypeKind::Array(Box::new(
-//                         make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("baz")))
-//                     )))),
-//                 }
-//             ]
-//         });
-//     }
+        let next = iter.next().unwrap(); 
+        assert_eq!(next.status, Some("422".to_string())); 
+        assert_rc_type!(next.typ.unwrap(), "foo"); 
+    }
 
-//     #[test]
-//     fn lax() { 
-//         assert_method("POST foo% -> @empty;", Method { 
-//             name: MethodName::Post,
-//             input: Some(MethodInput { 
-//                 typ: make_simple_rc_type(TypeKind::Identifier(GenericIdentifier::simple("foo"))), 
-//                 lax: true,
-//             }),
-//             outputs: vec![ 
-//                 MethodOutput { status: None, typ: Some(RCType::Special(Metaclass::Empty)) }
-//             ]
-//         })
-//     }
+    #[test]
+    fn err_empty_response() { 
+        let err = parse_method("POST foo ->");
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn err_get_body() { 
+        let err = parse_method("GET foo -> #200").unwrap_err();
+        assert!(matches!(err.kind, ParseErrorKind::Semantic(_)));
+    }
+
+    #[test]
+    fn err_duplicate_responses() { 
+        let err = parse_method("POST -> #201, #400: err, #201: foo").unwrap_err();
+        assert_eq!(err.kind, ParseErrorKind::SemanticDuplicate);
+    }
+
+    #[test]
+    fn method_type_literal() { 
+        let method = parse_method("PATCH { foo: bar } -> baz[]").unwrap(); 
+        assert_eq!(method.name, MethodName::Patch); 
+
+        let Some(input) = method.input else { panic!() };
+        let RCType::Normal(typ) = input.typ else { panic!() }; 
+        let TypeKind::Struct(_) = typ.kind else { panic!() }; 
+        assert!(!input.lax); 
+
+        let mut iter = method.outputs.into_iter(); 
+        let next = iter.next().unwrap(); 
+        let Some(RCType::Normal(typ)) = next.typ else { panic!() }; 
+        let TypeKind::Array(_) = typ.kind else { panic!() }; 
+
+        assert_eq!(iter.next(), None); 
+    }
+
+    #[test]
+    fn lax() { 
+        let method = parse_method("PATCH foo%").unwrap(); 
+        assert_eq!(method.name, MethodName::Patch); 
+
+        let input = method.input.unwrap(); 
+        assert_rc_type!(input.typ, "foo"); 
+        assert!(input.lax); 
+    }
 
 
-//     //
-//     // Links
-//     //
+    //
+    // Links
+    //
 
-//     fn assert_links(input: &str, expected: LinksBlock) { 
-//         let res = LinksBlock::parse_expect(&mut token_stream(input)).unwrap(); 
-//         assert_eq!(res, expected);
-//     }
 
-//     #[test]
-//     fn links_simple() { 
-//         assert_links("{ foo -> bar }", vec![ 
-//             Link { 
-//                 rel: "foo".to_string(), 
-//                 optional: false, 
-//                 typ: RCReference::Normal(GenericIdentifier { base: "bar".to_string(), args: vec![] })
-//             }
-//         ]);
-//     }
+    fn parse_links(input: &str) -> ParseResult<LinksBlock> { 
+        LinksBlock::parse_expect(&mut token_stream(input))
+    }
 
-//     #[test]
-//     fn links_special() { 
-//         assert_links("{ foo? -> @self }", vec![ 
-//             Link { 
-//                 rel: "foo".to_string(), 
-//                 optional: true, 
-//                 typ: RCReference::Special(Metaclass::RCSelf),
-//             }
-//         ])
-//     }
+    #[test]
+    fn links_simple() { 
+        let links = parse_links("{ foo -> bar }").unwrap();
+        let mut iter = links.into_iter(); 
 
-//     #[test]
-//     fn links_multiple_optional() { 
-//         assert_links("{ bar -> foo, baz? -> optional }", vec![ 
-//             Link { 
-//                 rel: "bar".to_string(),
-//                 optional: false, 
-//                 typ: RCReference::Normal(GenericIdentifier { base: "foo".to_string(), args: vec![] })
-//             },
-//             Link { 
-//                 rel: "baz".to_string(), 
-//                 optional: true, 
-//                 typ: RCReference::Normal(GenericIdentifier { base: "optional".to_string(), args: vec![] })
-//             }
-//         ]);
-//     }
+        let next = iter.next().unwrap(); 
+        assert_eq!(next.rel.text, "foo"); 
 
-//     #[test]
-//     fn links_generic() { 
-//         assert_links("{baz -> foo<bar> }", vec![
-//             Link { 
-//                 rel: "baz".to_string(), 
-//                 optional: false, 
-//                 typ: RCReference::Normal(GenericIdentifier { 
-//                     base: "foo".to_string(), 
-//                     args: vec![ GenericIdentifier { 
-//                         base: "bar".to_string(), 
-//                         args: vec![] 
-//                     } ] 
-//                 })
-//             }
-//         ]);
-//     }
+        let RCReference::Normal(typ) = next.typ else { panic!() }; 
+        assert_gid!(typ, "bar"); 
 
-//     //TAG: DUPLICATE_CHECK
-//     // #[test]
-//     // fn err_link_duplicate() { 
-//     //     let err = LinksBlock::parse_expect(&mut token_stream("{ foo -> bar, foo -> baz }")).unwrap_err(); 
-//     //     assert_eq!(err.kind, ParseErrorKind::SemanticDuplicate);
-//     // }
+        assert_eq!(iter.next(), None); 
+    }
 
-//     //
-//     // Integration
-//     //
+    #[test]
+    fn links_special() { 
+        let links = parse_links("{ foo? -> @self }").unwrap(); 
+        let mut iter = links.into_iter(); 
 
-//     fn parse_rc(input: &str) -> ParseResult<Option<ResourceClass>> { 
-//         ResourceClass::parse_peek(&mut token_stream(input))
-//     }
+        let next = iter.next().unwrap(); 
+        assert_eq!(next.rel.text, "foo"); 
+        assert_eq!(next.typ, RCReference::Special(Metaclass::RCSelf));
+        assert!(next.optional); 
 
-//     fn assert_rc(input: &str, expected: ResourceClass) { 
-//         let rc = parse_rc(input).unwrap().unwrap();
-//         assert_eq!(rc, expected); 
-//     }
+        assert_eq!(iter.next(), None); 
+    }
 
-//     #[test]
-//     fn simple_rc() { 
-//         assert_rc("resource Foo { 
-//             data int[]
+    #[test]
+    fn links_complex() { 
+        let links = parse_links("{ bar -> foo<baz>, other -> @media }").unwrap();
+        let mut iter = links.into_iter(); 
 
-//             interface Queryable
+        let next = iter.next().unwrap(); 
+        assert_eq!(next.rel.text, "bar"); 
+        assert!(!next.optional); 
 
-//             links { 
-//                 bar -> baz, 
-//             }
+        let RCReference::Normal(typ) = next.typ else { panic!() }; 
+        assert_gid!(typ, "foo" < "baz" >); 
 
-//             GET -> #200; 
+        let next = iter.next().unwrap(); 
+        assert_eq!(next.rel.text, "other"); 
+        assert_eq!(next.typ, RCReference::Special(Metaclass::Media)); 
+        assert!(!next.optional); 
 
-//             PATCH @self% -> @self; 
+        assert_eq!(iter.next(), None); 
+    }
 
-//         }", ResourceClass { 
+    //
+    // Integration
+    //
 
-//             declaration: RCDeclaration::Basic(GenericIdentifier { base: "Foo".to_string(), args: vec![] }),
+    fn parse_rc(input: &str) -> ParseResult<ResourceClass> { 
+        ResourceClass::parse_peek(&mut token_stream(input))
+            .map(Option::unwrap)
+    }
 
-//             data: Some(make_simple_type(
-//                 TypeKind::Array(Box::new(
-//                     make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("int")))
-//                 ))
-//             )),
-//             embed: None, 
+    #[test]
+    fn simple_rc() { 
+        let rc = parse_rc("resource Foo { 
+            data int[]
 
-//             interface: Some(InterfaceExpression::Identifier("Queryable".to_string())),
+            interface Queryable
 
-//             links: vec![ 
-//                 Link { 
-//                     rel: "bar".to_string(),  
-//                     optional: false, 
-//                     typ: RCReference::Normal(GenericIdentifier { 
-//                         base: "baz".to_string(), 
-//                         args: vec![], 
-//                     })
-//                 }
-//             ], 
+            links { 
+                bar -> baz, 
+            }
 
-//             methods: vec![
-//                 Method { 
-//                     name: MethodName::Get, 
-//                     input: None, 
-//                     outputs: vec![ 
-//                         MethodOutput { status: Some(200.to_string()), typ: None }
-//                     ]
-//                 },
+            GET -> #200
 
-//                 Method { 
-//                     name: MethodName::Patch, 
-//                     input: Some(MethodInput { 
-//                         typ: RCType::Special(Metaclass::RCSelf),
-//                         lax: true, 
-//                     }), 
-//                     outputs: vec![ 
-//                         MethodOutput { status: None, typ: Some(RCType::Special(Metaclass::RCSelf)) }
-//                     ]
-//                 }
-//             ],
+            PATCH @self% -> @self
 
-//         })
-//     }
+        }").unwrap();
 
-//     #[test]
-//     fn rc_generics() { 
-//         assert_rc("resource foo<T> {}", ResourceClass { 
-//             declaration: RCDeclaration::Basic(GenericIdentifier { 
-//                 base: "foo".to_string(), 
-//                 args: vec![ GenericIdentifier { base: "T".to_string(), args: vec![] } ] 
-//             }),
+        let RCDeclaration::Basic(ident) = rc.declaration else { panic!() }; 
+        assert_gid!(ident, "Foo"); 
 
-//             data: None, 
-//             embed: None, 
-//             interface: None, 
-//             links: vec![], 
-//             methods: vec![], 
-//         });
-//     }
+        let mut iter = rc.components.into_iter(); 
 
-//     #[test]
-//     fn rc_extends() { 
-//         assert_rc("resource foo extends bar<T> {}", ResourceClass { 
-//             declaration: RCDeclaration::Extended(
-//                 "foo".to_string(), 
-//                 GenericIdentifier { 
-//                     base: "bar".to_string(), 
-//                     args: vec![ 
-//                         GenericIdentifier { base: "T".to_string(), args: vec![] }
-//                     ]
-//                 }
-//             ),
+        let next = iter.next().unwrap(); 
+        let RCComponent::Data(typ) = next else { panic!() };
+        let TypeKind::Array(typ) = typ.kind else { panic!() }; 
+        let TypeKind::Identifier(typ) = typ.kind else { panic!() }; 
+        assert_gid!(typ, "int"); 
 
-//             data: None, 
-//             embed: None, 
-//             interface: None, 
-//             links: vec![], 
-//             methods: vec![], 
-//         })
-//     }
+        let next = iter.next().unwrap(); 
+        let RCComponent::Interface(expr) = next else { panic!() }; 
+        let InterfaceExpression::Identifier(expr) = expr else { panic!() };
+        assert_eq!(expr.text, "Queryable"); 
 
-//     #[test]
-//     fn err_extends_flags() { 
-//         let err = parse_rc("resource foo<T> extends bar<T> {}").unwrap_err();
-//         assert!(matches!(err.kind, ParseErrorKind::Semantic(_)))
-//     }
+        let next = iter.next().unwrap(); 
+        let RCComponent::Links(_) = next else { panic!() }; 
 
-//     #[test]
-//     fn err_implied_duplicate_method() { 
-//         let err = parse_rc("resource foo { 
-//             POST -> #422; 
-//             GET -> bar,
-//                 #405 baz; 
-//         }").unwrap_err();
+        assert!(matches!(iter.next().unwrap(), RCComponent::Method(_)));
+        assert!(matches!(iter.next().unwrap(), RCComponent::Method(_)));
+        assert!(iter.next().is_none()); 
+    }
 
-//         assert!(matches!(err.kind, ParseErrorKind::Semantic(_)))
-//     }
+    #[test]
+    fn rc_generics() { 
+        let rc = parse_rc("resource foo<T> {}").unwrap(); 
+        let RCDeclaration::Basic(gid) = rc.declaration else { panic!() }; 
+        assert_gid!(gid, "foo" < "T" >); 
+    }
 
-//     #[test]
-//     fn rc_data_literal() { 
-//         assert_rc(
-//             "resource rc { 
-//                 data { foo: bar }[]
+    #[test]
+    fn rc_extends() { 
+        let rc = parse_rc("resource foo extends bar<T> {}").unwrap(); 
+        let RCDeclaration::Extended(base, gid) = rc.declaration else { panic!() }; 
+        assert_eq!(base, "foo"); 
+        assert_gid!(gid, "bar" < "T" >); 
+    }
+    
+    #[test]
+    fn rc_data_literal() { 
+        let rc = parse_rc("resource foo { embed { foo: bar }[] }").unwrap(); 
 
-//                 interface { 
-//                     q: string,
-//                 }
-//             }", 
-//             ResourceClass { 
-//                 declaration: RCDeclaration::Basic(
-//                     GenericIdentifier { base: "rc".to_string(), args: vec![] }
-//                 ),
+        let mut iter = rc.components.into_iter(); 
+        let next = iter.next().unwrap(); 
+        let RCComponent::Embed(typ) = next else { panic!() };
+        let TypeKind::Array(typ) = typ.kind else { panic!() }; 
+        let TypeKind::Struct(typ) = typ.kind else { panic!() }; 
+        assert!(iter.next().is_none()); 
 
-//                 data: Some(make_simple_type(TypeKind::Array(Box::new(
-//                     make_simple_type(TypeKind::Struct(vec![ 
-//                         StructField { 
-//                             name: "foo".to_string(),
-//                             typ: make_simple_type(TypeKind::Identifier(GenericIdentifier::simple("bar"))),
-//                         }
-//                     ]))
-//                 )))),
+        let mut iter = typ.into_iter(); 
+        let field = iter.next().unwrap(); 
+        assert_eq!(iter.next(), None); 
 
-//                 embed: None, 
+        assert_eq!(field.name.text, "foo"); 
+        let TypeKind::Identifier(gid) = field.typ.kind else { panic!() }; 
+        assert_eq!(gid.base.text, "bar"); 
+    }
 
-//                 interface: Some(InterfaceExpression::Literal(vec![ 
-//                     InterfaceField { 
-//                         name: "q".to_string(), 
-//                         typ: InterfaceValueType::String, 
-//                         optional: false, 
-//                     }
-//                 ])),
-
-//                 links: vec![], 
-//                 methods: vec![],
-//             }
-//         )
-//     }
-
-//     #[test]
-//     fn rc_embed() { 
-//         assert_rc(
-//             "resource Embedder { 
-//                 embed { foo: Bar }
-//             }", 
-//             ResourceClass { 
-//                 declaration: RCDeclaration::Basic(GenericIdentifier { base: "Embedder".to_string(), args: vec![] }),
-//                 data: None, 
-//                 embed: Some(make_simple_type(TypeKind::Struct(vec![ 
-//                     StructField { 
-//                         name: "foo".to_string(), 
-//                         typ: make_simple_type(TypeKind::Identifier(GenericIdentifier { base: "Bar".to_string(), args: vec![] }))
-//                     }
-//                 ]))),
-
-//                 interface: None, 
-//                 links: vec![], 
-//                 methods: vec![],
-//             }
-//         )
-//     }
-
-// }
+}

@@ -72,11 +72,7 @@ method_name = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE' ;
 method_input = rc_type ['%'] ;
 method_status = '#' Number ;
 method_outputs = method_output [{',' method_output}] ;
-method_output = [method_status] [rc_type] ;
-(* SEMANTICS: 👆 At least one of these two must be present 
-    Otherwise, this could technically be empty.  Like, this would be technically valid.  Lol.
-    GET -> ,,,,,,,,,; 
- *)
+method_output = method_status ':' rc_type | method_status | rc_type ; 
 
 
 (* Entry Points *)
