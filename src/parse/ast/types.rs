@@ -224,7 +224,7 @@ impl Expectable for StructField {
 // Tuples
 //
 
-type Tuple = Vec<Type>; 
+pub type Tuple = Vec<Type>; 
 impl Peekable for Tuple { 
     fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
         if stream.peek_for_punctuation(Punctuation::BracketOpen)? { 

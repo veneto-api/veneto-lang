@@ -342,13 +342,6 @@ pub enum Keyword {
     // (interface already defined) 
 }
 
-impl Keyword { 
-    /// `true` if the keyword is valid at the start of a top-level sequence. 
-    pub fn is_top_level(&self) -> bool { 
-        matches!(self, Self::Type | Self::Use | Self::Interface | Self::Resource)
-    }
-}
-
 /// A "terminal" symbol - i.e. a punctuation or a keyword.
 /// 
 /// `Punctuation` has to be separate from `Word` because of the different lexing rules,
@@ -357,4 +350,12 @@ impl Keyword {
 pub enum Terminal { 
     Punctuation(Punctuation),
     Keyword(Keyword), 
+}
+
+
+#[derive(EnumString, Clone, Copy, PartialEq, Eq)]
+#[strum(serialize_all="lowercase")]
+pub enum Primitive { 
+    Int, 
+    String, 
 }

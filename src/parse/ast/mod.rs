@@ -27,6 +27,12 @@ pub mod rc;
 pub mod document; 
 
 
+
+pub use document::Document; 
+pub use types::{ Type, TypeKind }; 
+pub use rc::ResourceClass; 
+
+
 //
 // Parsing interface
 //
@@ -82,6 +88,21 @@ impl<T> Expectable for T where T: Finishable {
     }
 }
 
+pub trait AsFinishable where Self: Sized { 
+    /// If `initial` could represent the implementing AST node, this function finishes parsing the node.
+    /// Otherwise, it returns `None`. 
+    fn as_finish(stream: &mut TokenStream, initial: &Token) -> ParseResult<Option<Self>>;
+}
+impl<T> AsFinishable for T where T: Finishable { 
+    fn as_finish(stream: &mut TokenStream, initial: &Token) -> ParseResult<Option<Self>> {
+        if initial.as_terminal() == Some(Self::INITIAL_TOKEN) { 
+            Self::parse_finish(stream, initial.clone()).map(Some)
+        } else { 
+            Ok(None) 
+        }
+    }
+}
+
 
 
 fn parse_list_into<T: Peekable>(vec: &mut Vec<T>, stream: &mut TokenStream) -> ParseResult<()> { 
@@ -97,7 +118,7 @@ fn parse_list_into<T: Peekable>(vec: &mut Vec<T>, stream: &mut TokenStream) -> P
     Ok(())
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Spanned<T> { 
     pub node: T, 
     pub span: Span, 

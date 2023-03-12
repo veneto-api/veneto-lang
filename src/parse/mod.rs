@@ -5,7 +5,7 @@ pub mod lexer;
 
 /// This module contains definitions for the tokens emitted by the `lexer`, 
 /// including terminal tokens like punctuation and keywords.  
-mod tokens;
+pub mod tokens;
 
 /// This contains the representation of the Abstract Syntax Tree emitted by the parser.
 pub mod ast;

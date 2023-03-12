@@ -1,11 +1,13 @@
-use crate::parse::ParseResult;
+use std::backtrace::Backtrace;
+
+use crate::parse::{ParseResult, ParseError, ParseErrorKind};
 use crate::parse::lexer::{TokenStream};
 use crate::parse::tokens::{Punctuation, Terminal, Token};
 
-use super::{Peekable, Expectable, Finishable, Spanned};
+use super::{Peekable, Expectable, Finishable, Spanned}; 
 
 /// This is an identifier that can accept generic parameters.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct GenericIdentifier { 
     pub base: Spanned<String>, 
     pub args: Option<GenericArgs>,
@@ -58,6 +60,39 @@ impl Finishable for GenericArgs {
                 _ => return Err(next.as_err_unexpected())
             }
         }
+    }
+}
+
+/// This is a `GenericIdentifier` that does not allow nesting arguments;
+/// it really deserves to be its own class, I'm just trying something different rn 
+#[derive(Debug, PartialEq, Eq)]
+pub struct GenericDeclaration { 
+    pub base: Spanned<String>, 
+    pub args: Option<Vec<Spanned<String>>>, 
+}
+impl TryFrom<GenericIdentifier> for GenericDeclaration { 
+    type Error = ParseError;
+    fn try_from(value: GenericIdentifier) -> Result<Self, Self::Error> {
+        let args : Option<Vec<Spanned<String>>>; 
+        if let Some(params) = value.args { 
+            let params : Result<Vec<Spanned<String>>, ParseError> = params.into_iter().map(|arg| { 
+                if arg.args.is_some() { 
+                    Err(ParseError { 
+                        kind: ParseErrorKind::Semantic("Generic declarations cannot have nested arguments".to_owned()),
+                        span: arg.base.span, 
+                        backtrace: Backtrace::capture(), 
+                    })
+                } else { 
+                    Ok(arg.base)
+                }
+            }).collect();
+
+            args = Some(params?); 
+        } else { 
+            args = None; 
+        }
+
+        Ok(Self { base: value.base, args })
     }
 }
 
