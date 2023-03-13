@@ -7,4 +7,4 @@ pub mod std;
 
 
 #[allow(dead_code)]
-pub mod resolver;
+pub mod resolve;

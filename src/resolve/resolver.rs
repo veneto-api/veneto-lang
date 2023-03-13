@@ -5,7 +5,6 @@ use super::{scope::Scope, ResolutionKind, Symbol, Resolution, Reference};
 use crate::parse::ast::{self, Spanned, document::Node, TypeKind};
 
 pub struct Resolver { 
-    docs: Vec<Rc<RefCell<()>>>,
     scopes: Vec<Rc<RefCell<Scope>>>, 
 }
 impl Resolver { 
