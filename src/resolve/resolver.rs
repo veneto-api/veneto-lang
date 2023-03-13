@@ -1,28 +1,39 @@
 use std::rc::Rc; 
 use std::cell::RefCell; 
 
-use super::{scope::Scope, ResolutionKind, Symbol, Resolution, Reference}; 
+use super::{scope::Scope, ResolutionKind, Symbol, Resolution, Reference, DocumentSource, ResolverError, Location}; 
 use crate::parse::ast::{self, Spanned, document::Node, TypeKind};
 
 pub struct Resolver { 
     scopes: Vec<Rc<RefCell<Scope>>>, 
+
+    documents: Vec<DocumentSource>, 
+
+    errors: Vec<ResolverError>, 
 }
 impl Resolver { 
-    fn new_scope(&mut self) -> Rc<RefCell<Scope>> { 
+    fn new_scope(&mut self, document: usize) -> Rc<RefCell<Scope>> { 
         let len = self.scopes.len(); 
-        let scope = Rc::new(RefCell::new(Scope::new(len)));
+        let scope = Rc::new(RefCell::new(Scope::new(len, document)));
         self.scopes.push(scope.clone());
         scope
     }
-    fn new_scope_with_params(&mut self, parent: usize, params: Vec<Spanned<String>>) -> Rc<RefCell<Scope>> { 
+    fn new_scope_with_params(&mut self, document: usize, parent: usize, params: Vec<Spanned<String>>) -> Rc<RefCell<Scope>> { 
         let len = self.scopes.len(); 
-        let scope = Rc::new(RefCell::new(Scope::new_with_params(len, parent, params)));
+        let scope = Rc::new(RefCell::new(Scope::new_with_params(len, document, parent, params)));
         self.scopes.push(scope.clone());
         scope
     }
 
-    fn process_document(&mut self, doc: &ast::Document) { 
-        let scope = self.new_scope();
+    fn process_document(&mut self, doc: &ast::Document, src: DocumentSource) { 
+
+        let document = { 
+            let len = self.documents.len(); 
+            self.documents.push(src); 
+            len 
+        };
+
+        let scope = self.new_scope(document);
         let mut scope = scope.borrow_mut();
         let scope_id = scope.id; 
 
@@ -31,7 +42,7 @@ impl Resolver {
                 Node::Type(declared) => { 
 
                     let param_scope = declared.name.args.clone().map(|params| { 
-                        self.new_scope_with_params(scope_id, params)
+                        self.new_scope_with_params(document, scope_id, params)
                     });
 
 
@@ -50,21 +61,26 @@ impl Resolver {
                                 kind = ResolutionKind::Scoped(param_scope.borrow().id, Box::new(kind));
                             }
 
-                            let new_index = scope.symbols.insert(
+                            let location = Location { 
+                                document, 
+                                span: declared.name.base.span, 
+                            }; 
+
+                            let new_index = match scope.create_or_resolve(
                                 declared.name.base.node.clone(), 
-                                Symbol { 
-                                    references: Vec::new(), 
-                                    resolution: Some(Resolution { 
-                                        declaration: declared.name.base.span, 
-                                        kind,
-                                    })
+                                Resolution { location, kind }
+                            ) { 
+                                Ok(x) => x, 
+                                Err(err) => { 
+                                    self.errors.push(err); 
+                                    continue 
                                 }
-                            );
+                            };
 
                             scope.symbols.get_mut(referenced_index).references.push(Reference { 
+                                location,
                                 scope: scope_id, 
                                 symbol: new_index, 
-                                span: referenced.base.span, 
                             });
 
                         },

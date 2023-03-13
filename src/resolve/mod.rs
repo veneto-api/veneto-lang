@@ -9,11 +9,21 @@ mod arena;
 mod resolver; 
 mod scope; 
 
+enum DocumentSource { 
+    Standard, 
+    Userland(String), 
+}
+
+#[derive(Clone, Copy)]
+pub struct Location { 
+    pub document: usize, 
+    pub span: Span, 
+}
 
 struct Reference { 
+    pub location: Location, 
     pub scope: usize, 
     pub symbol: usize, 
-    pub span: Span, 
 }
 
 pub struct Symbol { 
@@ -27,11 +37,22 @@ impl Symbol {
             resolution: None, 
         }
     }
+
+    fn new_resolved(resolution: Resolution) -> Self { 
+        Self { 
+            references: Vec::new(), 
+            resolution: Some(resolution), 
+        }
+    }
+
+    fn resolve(&mut self, resolution: Resolution) { 
+        self.resolution = Some(resolution)
+    }
 }
 
 /// This information is added to a `Symbol` once it's resolved - it describes what it is and where it is defined. 
-struct Resolution { 
-    declaration: Span, 
+pub struct Resolution { 
+    location: Location, 
     kind: ResolutionKind, 
 }
 
@@ -47,4 +68,11 @@ enum ResolutionKind {
     Type(resolved::Type),
 
     Scoped(usize, Box<ResolutionKind>), 
+}
+
+pub enum ResolverError { 
+    Duplicate { 
+        original: Location, 
+        redefined_at: Location, 
+    }
 }

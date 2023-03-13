@@ -81,6 +81,7 @@ impl<'a, T> OccupiedEntry<'a, T> {
 }
 
 impl<'a, T> VacantEntry<'a, T> { 
+    /// Inserts the provided value into the collection, returning the ID of the inserted value 
     pub fn insert(self, val: T) -> usize { 
         let id = self.vec.len(); 
         self.vec.push(ArenaVal { id, val }); 
