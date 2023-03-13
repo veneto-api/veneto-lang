@@ -1,5 +1,8 @@
 use std::collections::HashMap;
-use std::collections::hash_map; 
+use std::collections::hash_map;
+
+use super::Reference;
+use super::ResolverError; 
 
 pub struct Arena<T> { 
     map: HashMap<String, usize>, 
@@ -45,16 +48,8 @@ impl<T> Arena<T> {
     pub fn get_mut(&mut self, id: usize) -> &mut T { 
         &mut self.vec.get_mut(id).unwrap().val
     }
-
-    /// Adds an item to the arena **without** associating it to a `String` key 
-    /// 
-    /// uhh maybe this is unncessary also maybe we don't need the wrapper thing 
-    pub fn push(&mut self, value: T) -> usize { 
-        let len = self.vec.len(); 
-        self.vec.push(ArenaVal { id: len, val: value });
-        len 
-    }
 }
+
 
 pub enum Entry<'a, T> { 
     Occupied(OccupiedEntry<'a, T>), 

@@ -14,13 +14,16 @@ enum DocumentSource {
     Userland(String), 
 }
 
+/// A location in source code - a `Span`, together with the index of the document it was obtained from 
 #[derive(Clone, Copy)]
 pub struct Location { 
     pub document: usize, 
     pub span: Span, 
 }
 
-struct Reference { 
+/// A complete reference to a `Symbol`; its index, the index of the scope it belongs to, and its `Location` in source
+#[derive(Copy, Clone)]
+pub struct Reference { 
     pub location: Location, 
     pub scope: usize, 
     pub symbol: usize, 
