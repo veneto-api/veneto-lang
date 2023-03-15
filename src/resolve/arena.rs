@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 use std::collections::hash_map;
 
-use super::Reference;
-use super::ResolverError; 
-
 pub struct Arena<T> { 
     map: HashMap<String, usize>, 
     vec: Vec<ArenaVal<T>>, 
@@ -21,6 +18,7 @@ impl<T> Arena<T> {
         }
     }
 
+    /// Inserts `value` at `key`, and returns its ID
     pub fn insert(&mut self, key: String, value: T) -> usize { 
         let len = self.vec.len(); 
         self.vec.push(ArenaVal { id: len, val: value }); 
@@ -47,6 +45,14 @@ impl<T> Arena<T> {
     /// Retrieves an entry by its ID, panicking if no such entry exists
     pub fn get_mut(&mut self, id: usize) -> &mut T { 
         &mut self.vec.get_mut(id).unwrap().val
+    }
+
+    pub fn lookup_mut(&mut self, key: &str) -> Option<(usize, &mut T)> { 
+        self.map.get(key).map(|id| (*id, &mut self.vec.get_mut(*id).unwrap().val))
+    }
+
+    pub fn lookup(&self, key: &str) -> Option<usize> { 
+        self.map.get(key).copied()
     }
 }
 

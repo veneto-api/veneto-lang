@@ -1,4 +1,5 @@
-use super::{arena::*, Location, ResolverError}; 
+use super::resolver::Resolver;
+use super::{arena::*, Location, ResolverError, Reference, SymbolIndex}; 
 use super::{ Symbol, Resolution, ResolutionKind };
 
 use crate::parse::ast::Spanned; 
@@ -7,14 +8,15 @@ pub struct Scope {
     pub id: usize, 
     pub document: usize, 
 
-    parent: Option<usize>, 
+    pub(super) parent: Option<usize>, 
  
+    /// Generic params, if applicable
     params: Option<Vec<Spanned<String>>>, 
 
-    pub symbols: Arena<Symbol>, 
+    pub(super) symbols: Arena<Symbol>, 
 }
 impl Scope { 
-    pub fn new(id: usize, document: usize) -> Self { 
+    pub(super) fn new(id: usize, document: usize) -> Self { 
         Self { 
             id, 
             document, 
@@ -26,7 +28,7 @@ impl Scope {
         }
     }
 
-    pub fn new_with_params(id: usize, document: usize, parent: usize, params: Vec<Spanned<String>>) -> Self { 
+    pub(super) fn new_generic(id: usize, document: usize, parent: usize, params: Vec<Spanned<String>>) -> Self { 
 
         let mut s = Self { 
             id, 
@@ -52,37 +54,16 @@ impl Scope {
         s
     }
 
-
-    /// Returns the ID of a symbol table entry, creating a new unresolved symbol if none exists
-    pub fn get_symbol(&mut self, name: String) -> usize { 
-        match self.symbols.entry(name) { 
-            Entry::Occupied(entry) => entry.get_id(), 
-            Entry::Vacant(entry) => entry.insert(Symbol::new_unresolved()),
-        }
-    }
-
-
-    /// Attempts to resolve a symbol at `key` with `resolution`, creating the symbol if necessary, returning the index of the symbol. 
+    /// If `false`, new type new symbol definitions roll up to the parent scope
     /// 
-    /// If the symbol has already been resolved, a `ResolverError` is returned.
-    pub fn create_or_resolve(&mut self, key: String, resolution: Resolution) -> Result<usize, ResolverError> { 
-        match self.symbols.entry(key) { 
-            Entry::Vacant(entry) => Ok(entry.insert(Symbol::new_resolved(resolution))), 
-            Entry::Occupied(entry) => { 
-                let id = entry.get_id(); 
-                let val = entry.get_mut_val(); 
-
-                if let Some(original) = &val.resolution { 
-                    Err(ResolverError::Duplicate { 
-                        original: original.location,
-                        redefined_at: resolution.location, 
-                    })
-                } else { 
-                    val.resolve(resolution); 
-                    Ok(id)
-                }
-            }
-        }
+    /// This is pretty poorly defined at the moment, 
+    /// but the basic idea is that unresolved symbols within a generic context
+    /// should be defined in the parent scope.  
+    /// So this is `false` for only those scopes
+    /// 
+    /// We'll want this to be a lot more rigorous later on 
+    pub(super) fn definitions_allowed(&self) -> bool { 
+        self.params.is_none()
     }
 
 }

@@ -21,13 +21,20 @@ pub struct Location {
     pub span: Span, 
 }
 
-/// A complete reference to a `Symbol`; its index, the index of the scope it belongs to, and its `Location` in source
+/// A location in source code, as well as the scope and symbol IDs of the symbol it refers to. 
 #[derive(Copy, Clone)]
 pub struct Reference { 
     pub location: Location, 
-    pub scope: usize, 
-    pub symbol: usize, 
+    pub index: SymbolIndex, 
 }
+
+/// A complete index of a symbol; its scope and symbol IDs 
+#[derive(Clone, Copy)]
+pub struct SymbolIndex { 
+    pub scope_id: usize, 
+    pub symbol_id: usize,
+}
+
 
 pub struct Symbol { 
     references: Vec<Reference>, 
@@ -48,24 +55,28 @@ impl Symbol {
         }
     }
 
-    fn resolve(&mut self, resolution: Resolution) { 
-        self.resolution = Some(resolution)
+    fn resolve(&mut self, resolution: Resolution) -> Result<(), ResolverError> { 
+        if let Some(original) = &self.resolution { 
+            Err(ResolverError::Duplicate { original: original.location, redefined_at: resolution.location })
+        } else { 
+            self.resolution = Some(resolution);
+            Ok(())
+        }
     }
 }
 
 /// This information is added to a `Symbol` once it's resolved - it describes what it is and where it is defined. 
+#[derive(Clone)]
 pub struct Resolution { 
     location: Location, 
     kind: ResolutionKind, 
 }
 
+#[derive(Clone)]
 enum ResolutionKind { 
     Param(usize), 
 
-    Alias { 
-        scope: usize, 
-        entry: usize, 
-    },
+    Alias(Reference),
 
     ResourceClass(Rc<ast::ResourceClass>), 
     Type(resolved::Type),
@@ -73,9 +84,12 @@ enum ResolutionKind {
     Scoped(usize, Box<ResolutionKind>), 
 }
 
+#[derive(Clone, Copy)]
 pub enum ResolverError { 
     Duplicate { 
         original: Location, 
         redefined_at: Location, 
     }
 }
+
+pub type ResolverResult<T> = Result<T, Vec<ResolverError>>;
