@@ -1,6 +1,6 @@
 use super::{resolved, SymbolIndex};
 use super::{scope::Scope, ResolutionKind, Symbol, Resolution, Reference, DocumentSource, ResolverError, Location}; 
-use crate::parse::ast::{self, Spanned, document::{Node, TypeDeclaration}, TypeKind};
+use crate::parse::ast::{self, Spanned, document::Node, TypeKind};
 
 macro_rules! try_or_continue {
     (vec $res:expr => $errs:expr) => {
@@ -24,6 +24,27 @@ macro_rules! try_or_continue {
     }
 }
 
+
+#[derive(Clone)]
+struct RefSource { 
+    pub scope_id: usize, 
+    pub location: Location, 
+    pub key: String, 
+}
+impl RefSource { 
+    pub fn new(document_id: usize, scope_id: usize, text: Spanned<String>) -> Self { 
+        Self { 
+            scope_id, 
+            location: Location { 
+                document: document_id, 
+                span: text.span, 
+            }, 
+            key: text.node, 
+        }
+    }
+}
+
+
 pub struct Resolver { 
     pub(super) scopes: Vec<Scope>, 
 
@@ -42,6 +63,12 @@ impl Resolver {
         self.scopes.push(Scope::new_generic(len, document, parent, params));
         len
     }
+
+
+    fn get_mut(&mut self, index: SymbolIndex) -> &mut Symbol { 
+        self.scopes[index.scope_id].symbols.get_mut(index.symbol_id)
+    }
+
 
     /// Recursively looks up a symbol by key 
     /// hrngh 
@@ -81,12 +108,35 @@ impl Resolver {
         }
     }
 
-    /// Obtains an index for the provided symbol `key` starting in `scope_id`.
+    /// Creates the symbol in the appropriate scope, **without** associating it to a key
+    fn push_symbol(&mut self, scope_id: usize, value: Symbol) -> SymbolIndex { 
+        //TODO: Consolidate this scope_id search with the above function 
+        let mut scope_id = scope_id; 
+        loop { 
+            let scope = &mut self.scopes[scope_id];
+
+            if scope.definitions_allowed() { 
+                let symbol_id = scope.symbols.push(value); 
+                return SymbolIndex{ scope_id, symbol_id }
+            }
+            else { 
+                scope_id = scope.parent.expect("Definitions forbidden in this scope, but it doesn't have a parent");
+                continue 
+            }
+        }
+    }
+
+
+    /// Obtains an `SymbolIndex` for the provided symbol `key` starting in `scope_id`.
     /// 
     /// This searches up the stack of scopes and returns the index to a matching symbol if it finds it, 
-    /// or creates it in the appropriate scope if no matching symbol exists yet 
-    fn get_symbol_index(&mut self, scope_id: usize, key: String) -> SymbolIndex { 
-        self.try_lookup(scope_id, &key).unwrap_or_else(|| self.create_symbol(scope_id, key, Symbol::new_unresolved()))
+    /// or creates it in the appropriate scope if no matching symbol exists yet.
+    /// 
+    /// It also adds a `Location` to the list of references for the symbol 
+    fn get_symbol_index(&mut self, source: RefSource) -> SymbolIndex { 
+        self.try_lookup(source.scope_id, &source.key).unwrap_or_else(|| {
+            self.create_symbol(source.scope_id, source.key, Symbol::new_unresolved())
+        })
     }
 
     /// Resolves the symbol within the provided scope, 
@@ -131,7 +181,6 @@ impl Resolver {
                         scope_id, 
                         &declared.node.kind
                     );
-                    let reference = try_or_continue!(vec reference => self.errors); 
 
                     // Create the `ResolutionKind` from our reference 
                     let mut kind = ResolutionKind::Alias(reference); 
@@ -141,10 +190,10 @@ impl Resolver {
 
                     // Resolve the symbol 
                     let res = self.resolve(scope_id, declared.name.base.node.clone(), Resolution { 
-                        location: Location { 
+                        declared_at: Some(Location { 
                             document, 
                             span: declared.name.base.span, 
-                        },
+                        }),
                         kind,
                     });
                     try_or_continue!(res => self.errors);
@@ -163,18 +212,17 @@ impl Resolver {
         document: usize, 
         scope_id: usize, 
         kind: &TypeKind, 
-    ) -> Result<Reference, Vec<ResolverError>> { 
+    ) -> SymbolIndex { 
         match kind { 
             TypeKind::Identifier(ident) => { 
 
-                Ok(Reference { 
-                    location: Location { 
-                        document, 
-                        span: ident.base.span, 
-                    }, 
-                    index: self.get_symbol_index(scope_id, ident.base.node.clone()),
-                })
+                let source = RefSource::new(document, scope_id, ident.base.clone()); 
+                let location = source.location;
+                let index = self.get_symbol_index(source); 
 
+                self.get_mut(index).references.push(Reference { location, index });
+
+                index
             }, 
  
 
@@ -183,17 +231,28 @@ impl Resolver {
 
                 //   👇 ast::types::StructField
                 for field in body { 
-                    let typ = self.handle_type_expression(
+                    let index = self.handle_type_expression(
                         document, 
                         scope_id,  
                         &field.typ.kind,
                     );
-                    let typ = try_or_continue!(vec typ => self.errors); 
 
-                    fields.insert(field.name.node.clone(), typ); 
+                    fields.insert(field.name.node.clone(), Reference { 
+                        index,
+                        location: Location { 
+                            document, 
+                            span: field.name.span, 
+                        }
+                    }); 
                 }
 
-                todo!()
+                self.push_symbol(
+                    scope_id,
+                    Symbol::new_resolved(Resolution { 
+                        declared_at: None, 
+                        kind: ResolutionKind::Type(resolved::Type::Struct(fields))
+                    })
+                )
             }
 
             _ => todo!()

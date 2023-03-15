@@ -1,7 +1,5 @@
-use std::rc::Rc;
 use crate::parse::lexer::Span; 
 
-use crate::parse::ast; 
 mod resolved; 
 
 mod arena;
@@ -37,8 +35,14 @@ pub struct SymbolIndex {
 
 
 pub struct Symbol { 
+    resolution: Option<Resolution>,
+
+    /// This has two purposes
+    /// 1) The IDE functionality, "find references"
+    /// 2) Validating generic params and stuff after the fact
+    /// 
+    /// soo.... we need to figure out how #2 works 
     references: Vec<Reference>, 
-    resolution: Option<Resolution> 
 }
 impl Symbol { 
     fn new_unresolved() -> Self { 
@@ -57,7 +61,10 @@ impl Symbol {
 
     fn resolve(&mut self, resolution: Resolution) -> Result<(), ResolverError> { 
         if let Some(original) = &self.resolution { 
-            Err(ResolverError::Duplicate { original: original.location, redefined_at: resolution.location })
+            let original = original.declared_at.expect("Overwriting a literal declaration"); 
+            let redefined_at = resolution.declared_at.expect("Overwriting a declaration with a literal");
+
+            Err(ResolverError::Duplicate { original, redefined_at })
         } else { 
             self.resolution = Some(resolution);
             Ok(())
@@ -68,20 +75,24 @@ impl Symbol {
 /// This information is added to a `Symbol` once it's resolved - it describes what it is and where it is defined. 
 #[derive(Clone)]
 pub struct Resolution { 
-    location: Location, 
     kind: ResolutionKind, 
+
+    /// The `Location` where the symbol's _key_ is declared.
+    /// 
+    /// This may be `None` where the symbol is a literal.  
+    /// This is kinda messy, we may have to revisit 
+    declared_at: Option<Location>, 
 }
 
 #[derive(Clone)]
 enum ResolutionKind { 
     Param(usize), 
 
-    Alias(Reference),
-
-    ResourceClass(Rc<ast::ResourceClass>), 
-    Type(resolved::Type),
+    Alias(SymbolIndex),
 
     Scoped(usize, Box<ResolutionKind>), 
+
+    Type(resolved::Type),
 }
 
 #[derive(Clone, Copy)]

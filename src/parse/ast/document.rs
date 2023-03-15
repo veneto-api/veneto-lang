@@ -45,7 +45,7 @@ pub struct TypeDeclaration {
 impl Finishable for TypeDeclaration { 
     const INITIAL_TOKEN: Terminal = Terminal::Keyword(Keyword::Type);
 
-    fn parse_finish(stream: &mut TokenStream, initial: Token) -> ParseResult<Self> {
+    fn parse_finish(stream: &mut TokenStream, _initial: Token) -> ParseResult<Self> {
         let name = GenericIdentifier::parse_expect(stream)?.try_into()?; 
         stream.next()?.expect_punctuation(Punctuation::Assign)?; 
         Ok(Self{ name, node: Type::parse_expect(stream)? })

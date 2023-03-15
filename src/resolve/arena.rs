@@ -25,6 +25,13 @@ impl<T> Arena<T> {
         self.map.insert(key, len); 
         len 
     }
+
+    /// Inserts `value` **without** associating it to a key
+    pub fn push(&mut self, value: T) -> usize { 
+        let len = self.vec.len(); 
+        self.vec.push(ArenaVal { id: len, val: value });
+        len
+    }
  
     pub fn entry(&mut self, key: String) -> Entry<T> { 
         match self.map.entry(key) { 

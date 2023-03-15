@@ -1,5 +1,4 @@
-use super::resolver::Resolver;
-use super::{arena::*, Location, ResolverError, Reference, SymbolIndex}; 
+use super::{arena::*, Location}; 
 use super::{ Symbol, Resolution, ResolutionKind };
 
 use crate::parse::ast::Spanned; 
@@ -42,13 +41,13 @@ impl Scope {
         }; 
 
         for (index, param) in params.iter().enumerate() { 
-            s.symbols.insert(param.node.clone(), Symbol { 
-                references: Vec::new(), 
-                resolution: Some(Resolution { 
-                    location: Location { document, span: param.span },
+            s.symbols.insert(
+                param.node.clone(),
+                Symbol::new_resolved(Resolution { 
+                    declared_at: Some(Location { document, span: param.span }),
                     kind: ResolutionKind::Param(index),
                 })
-            });
+            );
         }
 
         s
