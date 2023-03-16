@@ -327,13 +327,13 @@ impl<'a> RawTokenStream<'a> {
 
     fn consume(
         &mut self, 
-        first_index: Index, 
+        first_unit: Unit,  
         first_char: char, 
         kind: fn(String) -> TokenKind, 
         predicate: fn(char) -> bool
     ) -> ParseResult<Token> { 
         let mut str = String::new(); 
-        let mut last_pos = Position(first_index); 
+        let mut last_pos = first_unit.get_end();
         str.push(first_char); 
 
         loop { 
@@ -351,7 +351,7 @@ impl<'a> RawTokenStream<'a> {
                     return Ok(Token { 
                         kind: kind(str), 
                         span: Span { 
-                            lo: Position(first_index),
+                            lo: Position(first_unit.index),
                             hi: last_pos, 
                         }
                     })
@@ -385,7 +385,7 @@ impl<'a> RawTokenStream<'a> {
                 UnitKind::Char(c) => { 
                     if c.is_alphabetic() { 
                         return self.consume(
-                            next.index, 
+                            next, 
                             c, 
                             TokenKind::Word, 
                             |ch| ch.is_alphanumeric() || ch == '_'
@@ -393,7 +393,7 @@ impl<'a> RawTokenStream<'a> {
                     }
                     else if c.is_numeric() { 
                         return self.consume(
-                            next.index, 
+                            next, 
                             c, 
                             TokenKind::Number, 
                             |ch| ch.is_numeric()

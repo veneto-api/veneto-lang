@@ -18,8 +18,7 @@ fn simple_alias() {
     let b_id = scope.symbols.lookup("B").unwrap();
     let b = scope.symbols.get(b_id); 
 
-    // Bug!
-    // assert_eq!(b.resolution.as_ref().unwrap().declared_at.unwrap().span, Span { lo: Position(33), hi: Position(34) })
+    assert_eq!(b.resolution.as_ref().unwrap().declared_at.unwrap().span, Span { lo: Position(33), hi: Position(34) });
 
     assert!(matches!(b.resolution.as_ref().unwrap().kind, ResolutionKind::TypeLiteral(TypeLiteral::Primitive(Primitive::Int))));
 

@@ -194,3 +194,35 @@ fn string_literal() {
 
     assert_eq!(stream.stream.stream.newlines, vec![ 8 ])
 }
+
+macro_rules! assert_spans {
+    ($input:literal { $($lo:literal + $len:literal),+ }) => {
+        let mut stream = TokenStream::new($input.chars());
+
+        $(
+            let next = stream.next().unwrap(); 
+            assert_eq!(next.span, Span { lo: Position($lo), hi: Position($lo + $len) }); 
+        )+
+
+        assert_eq!(stream.next().unwrap().kind, TokenKind::EOF); 
+    };
+}
+
+#[test]
+fn identifier_span() { 
+    // Incorrect position found when testing in 0d6bd627fff579acd1040b1078febdf27960553c
+
+    assert_spans!("
+    type A = B
+    type B = int
+" { 
+    5 + 4, 
+    10 + 1, 
+    12 + 1, 
+    14 + 1, 
+    20 + 4, 
+    25 + 1, 
+    27 + 1, 
+    29 + 3
+});
+}
