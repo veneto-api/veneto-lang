@@ -2,39 +2,79 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
 
-use super::Reference;
-use super::ResolverError;
+use crate::parse::ast::Spanned;
+use crate::parse::lexer::Span;
+use crate::parse::tokens::Primitive;
 
-#[derive(Clone)]
+use super::Location;
+use super::ResolutionKind;
+use super::ResolverError;
+use super::SymbolIndex;
+
+#[derive(Clone, Debug)]
 pub enum Type { 
-    Struct(ReferenceMap)
+    Alias(SymbolIndex), 
+    Literal(TypeLiteral), 
 }
 
-pub type ReferenceMap = HashMap<String, Reference>; 
+#[allow(clippy::from_over_into)] // this is a one-way mapping, not a surjection 🫤
+impl Into<ResolutionKind> for Type { 
+    fn into(self) -> ResolutionKind {
+        match self { 
+            Self::Alias(index) => ResolutionKind::Alias(index), 
+            Self::Literal(lit) => ResolutionKind::TypeLiteral(lit), 
+        }
+    }
+}
 
-/*
-    We want to differentiate between types of "reference" here
-    In this Reference, the `Location` refers to the definition of the **key**, 
-    while the `SymbolIndex` refers to the type of the value
 
-    This is not the case in other uses of it, 
-    like type alia, 
+#[derive(Clone, Debug)]
+pub enum TypeLiteral { 
+    Struct(Struct),
+    Primitive(Primitive), 
+}
 
-    well actually maybe it is
-    jesus christ this is confusing
- */
+#[derive(Clone, Debug)]
+pub struct StructField { 
+    key_span: Span, 
+    typ: Type, 
+}
 
-/// Tries to add a `key`/`val` pair to `map`, but adds an error to `errs` if the key already exists
-pub(crate) fn try_add_reference(map: &mut ReferenceMap, errs: &mut Vec<ResolverError>, key: String, val: Reference) { 
-    match map.entry(key) { 
-        Entry::Occupied(entry) => { 
-            errs.push(ResolverError::Duplicate { 
-                original: entry.get().location, 
-                redefined_at: val.location,  
-            })
-        }, 
-        Entry::Vacant(entry) => { 
-            entry.insert(val);
+#[derive(Clone, Debug)]
+pub struct Struct { 
+    pub document_id: usize, 
+    pub fields: HashMap<String, StructField>, 
+}
+
+impl Struct { 
+    pub fn new(document_id: usize) -> Self { 
+        Self { 
+            document_id,
+            fields: HashMap::new(), 
+        }
+    }
+
+    pub fn try_add_reference(&mut self, errs: &mut Vec<ResolverError>, key: Spanned<String>, typ: Type) { 
+        match self.fields.entry(key.node) { 
+            Entry::Vacant(entry) => {
+                entry.insert(StructField { 
+                    key_span: key.span, 
+                    typ, 
+                });
+            },
+
+            Entry::Occupied(entry) => { 
+                errs.push(ResolverError::Duplicate { 
+                    original: Location { 
+                        document: self.document_id, 
+                        span: entry.get().key_span, 
+                    }, 
+                    redefined_at: Location { 
+                        document: self.document_id, 
+                        span: key.span, 
+                    }, 
+                });
+            }
         }
     }
 }

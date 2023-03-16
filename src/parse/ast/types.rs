@@ -1,6 +1,8 @@
+use std::str::FromStr;
+
 use crate::parse::ParseErrorKind;
 use crate::parse::{lexer::TokenStream, ParseResult};
-use crate::parse::tokens::{Punctuation, Keyword, Terminal, TokenKind, Token};
+use crate::parse::tokens::{Punctuation, Keyword, Terminal, TokenKind, Token, Primitive};
 use crate::{peek_match};
 
 use super::{Expectable, Peekable, Finishable, Spanned};
@@ -10,6 +12,8 @@ use strum_macros::Display;
 
 #[derive(PartialEq, Display, Debug)]
 pub enum TypeKind { 
+    Primitive(Primitive),
+
     /// A reference to an existing type 
     Identifier(GenericIdentifier),
 
@@ -20,7 +24,6 @@ pub enum TypeKind {
 
     /// A homogenous array of a single type 
     Array(Box<Type>), 
-    // 👆 the compiler complains if it's "without indirection", so it must be boxed. TIL!
 }
 
 /// This is a separate enum of all of the non-array `TypeKind`s. 
@@ -33,10 +36,13 @@ enum InnerTypeKind {
     Tuple(Tuple),
 
     Struct(StructBody),
+
+    Primitive(Primitive), 
 }
 impl From<InnerTypeKind> for TypeKind {
     fn from(val: InnerTypeKind) -> Self {
         match val { 
+            InnerTypeKind::Primitive(x) => TypeKind::Primitive(x), 
             InnerTypeKind::Identifier(x) => TypeKind::Identifier(x),
             InnerTypeKind::Tuple(x) => TypeKind::Tuple(x),
             InnerTypeKind::Struct(x) => TypeKind::Struct(x),
@@ -91,6 +97,14 @@ impl Type {
     }
 
     fn begin_peek(stream: &mut TokenStream) -> ParseResult<Option<InnerTypeKind>> { 
+        let peek = stream.peek()?; 
+        if let TokenKind::Word(word) = peek.kind { 
+            if let Ok(prim) = Primitive::from_str(&word) { 
+                stream.next()?; 
+                return Ok(Some(InnerTypeKind::Primitive(prim)))
+            }
+        }
+
         if let Some(str) = StructBody::parse_peek(stream)? { 
             Ok(Some(InnerTypeKind::Struct(str)))
         }
@@ -226,7 +240,7 @@ impl Expectable for StructField {
 
 pub type Tuple = Vec<Type>; 
 impl Peekable for Tuple { 
-    fn parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
+    fn  parse_peek(stream: &mut TokenStream) -> ParseResult<Option<Self>> {
         if stream.peek_for_punctuation(Punctuation::BracketOpen)? { 
 
             let mut types = Self::new(); 

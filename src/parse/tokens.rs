@@ -353,7 +353,7 @@ pub enum Terminal {
 }
 
 
-#[derive(EnumString, Clone, Copy, PartialEq, Eq)]
+#[derive(EnumString, Clone, Copy, PartialEq, Eq, Debug)]
 #[strum(serialize_all="lowercase")]
 pub enum Primitive { 
     Int, 

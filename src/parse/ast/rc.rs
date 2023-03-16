@@ -432,6 +432,7 @@ mod test {
     use crate::parse::ast::types::{ TypeKind };
     use crate::parse::lexer::{Span, Position};
     use crate::parse::lexer_tests::token_stream;
+    use crate::parse::tokens::Primitive;
     use crate::parse::{ParseResult, ParseErrorKind};
     use crate::parse::ast::{Expectable, Peekable};
 
@@ -654,8 +655,7 @@ mod test {
         let next = iter.next().unwrap(); 
         let RCComponent::Data(typ) = next else { panic!() };
         let TypeKind::Array(typ) = typ.kind else { panic!() }; 
-        let TypeKind::Identifier(typ) = typ.kind else { panic!() }; 
-        assert_gid!(typ, "int"); 
+        assert!(matches!(typ.kind, TypeKind::Primitive(Primitive::Int)));
 
         let next = iter.next().unwrap(); 
         let RCComponent::Interface(expr) = next else { panic!() }; 

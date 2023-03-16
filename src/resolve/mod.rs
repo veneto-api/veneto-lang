@@ -7,7 +7,10 @@ mod arena;
 mod resolver; 
 mod scope; 
 
-enum DocumentSource { 
+#[cfg(test)]
+mod test;
+
+pub enum DocumentSource { 
     Standard, 
     Userland(String), 
 }
@@ -27,7 +30,7 @@ pub struct Reference {
 }
 
 /// A complete index of a symbol; its scope and symbol IDs 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SymbolIndex { 
     pub scope_id: usize, 
     pub symbol_id: usize,
@@ -84,7 +87,7 @@ pub struct Resolution {
     declared_at: Option<Location>, 
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum ResolutionKind { 
     Param(usize), 
 
@@ -92,7 +95,7 @@ enum ResolutionKind {
 
     Scoped(usize, Box<ResolutionKind>), 
 
-    Type(resolved::Type),
+    TypeLiteral(resolved::TypeLiteral),
 }
 
 #[derive(Clone, Copy)]

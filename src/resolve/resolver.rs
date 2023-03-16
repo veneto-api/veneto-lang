@@ -1,3 +1,4 @@
+use super::resolved::TypeLiteral;
 use super::{resolved, SymbolIndex};
 use super::{scope::Scope, ResolutionKind, Symbol, Resolution, Reference, DocumentSource, ResolverError, Location}; 
 use crate::parse::ast::{self, Spanned, document::Node, TypeKind};
@@ -53,6 +54,14 @@ pub struct Resolver {
     errors: Vec<ResolverError>, 
 }
 impl Resolver { 
+    pub fn new() -> Self { 
+        Self { 
+            scopes: Vec::new(), 
+            documents: Vec::new(), 
+            errors: Vec::new(), 
+        }
+    }
+
     fn new_scope(&mut self, document: usize) -> usize { 
         let len = self.scopes.len(); 
         self.scopes.push(Scope::new(len, document));
@@ -155,7 +164,7 @@ impl Resolver {
     }
 
 
-    fn process_document(&mut self, doc: &ast::Document, src: DocumentSource) { 
+    pub fn process_document(&mut self, doc: &ast::Document, src: DocumentSource) { 
 
         let document = { 
             let len = self.documents.len(); 
@@ -176,14 +185,14 @@ impl Resolver {
                     let scope_id = param_scope.unwrap_or(document_scope_id);
 
                     // Obtain reference to the right-hand side value 
-                    let reference = self.handle_type_expression(
+                    let resolved = self.handle_type_expression(
                         document, 
                         scope_id, 
                         &declared.node.kind
                     );
 
                     // Create the `ResolutionKind` from our reference 
-                    let mut kind = ResolutionKind::Alias(reference); 
+                    let mut kind : ResolutionKind = resolved.into();
                     if let Some(scope) = param_scope { 
                         kind = ResolutionKind::Scoped(scope, Box::new(kind));
                     }
@@ -209,50 +218,40 @@ impl Resolver {
     /// Processes a type expression,
     /// returning its symbol ID if successful 
     fn handle_type_expression(&mut self, 
-        document: usize, 
+        document_id: usize, 
         scope_id: usize, 
         kind: &TypeKind, 
-    ) -> SymbolIndex { 
+    ) -> resolved::Type { 
         match kind { 
+            TypeKind::Primitive(prim) => resolved::Type::Literal(TypeLiteral::Primitive(*prim)),
+
             TypeKind::Identifier(ident) => { 
 
-                let source = RefSource::new(document, scope_id, ident.base.clone()); 
+                let source = RefSource::new(document_id, scope_id, ident.base.clone()); 
                 let location = source.location;
                 let index = self.get_symbol_index(source); 
 
                 self.get_mut(index).references.push(Reference { location, index });
 
-                index
+                resolved::Type::Alias(index)
             }, 
  
 
             TypeKind::Struct(body) => { 
-                let mut fields = resolved::ReferenceMap::new(); 
+                let mut s = resolved::Struct::new(document_id); 
 
                 //   👇 ast::types::StructField
                 for field in body { 
-                    let index = self.handle_type_expression(
-                        document, 
+                    let typ = self.handle_type_expression(
+                        document_id, 
                         scope_id,  
                         &field.typ.kind,
                     );
 
-                    fields.insert(field.name.node.clone(), Reference { 
-                        index,
-                        location: Location { 
-                            document, 
-                            span: field.name.span, 
-                        }
-                    }); 
+                    s.try_add_reference(&mut self.errors, field.name.clone(), typ);
                 }
 
-                self.push_symbol(
-                    scope_id,
-                    Symbol::new_resolved(Resolution { 
-                        declared_at: None, 
-                        kind: ResolutionKind::Type(resolved::Type::Struct(fields))
-                    })
-                )
+                resolved::Type::Literal(TypeLiteral::Struct(s))
             }
 
             _ => todo!()
