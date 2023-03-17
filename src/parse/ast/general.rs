@@ -109,6 +109,23 @@ pub mod test {
         )
     }
 
+    macro_rules! assert_gdec {
+        ($gid:ident, $base:literal < $($params:tt),+ > ) => {
+            assert_eq!($gid.base.node, $base);
+
+            { 
+                let args = $gid.args.unwrap();
+                let mut iter = args.iter(); 
+                $(
+                    let next = iter.next().unwrap();
+                    assert_eq!(next.node, $params);
+                )+
+                assert_eq!(iter.next(), None); 
+
+            }
+        };
+    }
+
     macro_rules! assert_gid {
         ($gid:ident, $base:literal) => { 
             assert_eq!($gid.base.node, $base);
@@ -142,6 +159,7 @@ pub mod test {
 
     pub(crate) use assert_gid; 
     pub(crate) use assert_gid_base; 
+    pub(crate) use assert_gdec;
  
     #[test]
     fn simple() { 

@@ -15,7 +15,7 @@ lazy_static! {
 
 #[cfg(test)] 
 mod test {
-    use crate::parse::ast::{document::Node, rc::{RCComponent, MethodName, RCDeclaration, RCReference, Metaclass, RCType}, types::TypeKind, general::test::assert_gid};
+    use crate::parse::ast::{document::Node, rc::{RCComponent, MethodName, RCDeclaration, RCReference, Metaclass, RCType}, types::TypeKind, general::test::{assert_gid, assert_gdec}};
  
     #[test]
     fn test_std() { 
@@ -28,7 +28,7 @@ mod test {
 
         let Some(Node::ResourceClass(rc)) = nodes.next() else { panic!() }; 
         let RCDeclaration::Basic(gid) = rc.declaration else { panic!() }; 
-        // assert_gid!(gid, "Ref" < "T" >); 
+        assert_gdec!(gid, "Ref" < "T" >); 
 
         let mut components = rc.components.into_iter(); 
 
@@ -58,7 +58,7 @@ mod test {
 
         let Some(Node::ResourceClass(rc)) = nodes.next() else { panic!() }; 
         let RCDeclaration::Basic(gid) = rc.declaration else { panic!() }; 
-        // assert_gid!(gid, "List" < "T" > ); 
+        assert_gdec!(gid, "List" < "T" > ); 
 
         let mut components = rc.components.into_iter(); 
 

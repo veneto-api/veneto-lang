@@ -426,7 +426,7 @@ impl Peekable for Method {
 #[cfg(test)]
 mod test {
 
-    use crate::parse::ast::general::test::{assert_gid};
+    use crate::parse::ast::general::test::{assert_gid, assert_gdec};
     use crate::parse::ast::interfaces::{InterfaceExpression};
     use crate::parse::ast::rc::RCComponent;
     use crate::parse::ast::types::{ TypeKind };
@@ -674,7 +674,7 @@ mod test {
     fn rc_generics() { 
         let rc = parse_rc("resource foo<T> {}").unwrap(); 
         let RCDeclaration::Basic(gid) = rc.declaration else { panic!() }; 
-        // assert_gid!(gid, "foo" < "T" >); 
+        assert_gdec!(gid, "foo" < "T" >); 
     }
 
     #[test]
